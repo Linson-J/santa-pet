@@ -2,299 +2,66 @@
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-from PIL import Image, ImageDraw, ImageFilter, ImageTk
-import threading, random, os, math, psutil, shutil, tempfile
+from PIL import Image, ImageTk
+import threading, random, os, glob, psutil, shutil, tempfile
 from datetime import datetime
 from todo_manager import TodoWindow
-
-# ─────────────────────────── PALETTE ────────────────────────
-RED    = (210,  28,  28, 255)
-LRED   = (255, 100,  80, 255)
-DRED   = (130,  12,  12, 255)
-WHITE  = (255, 255, 255, 255)
-SKIN   = (255, 200, 158, 255)
-LSKIN  = (255, 228, 196, 255)
-BLACK  = ( 26,  20,  20, 255)
-GOLD   = (255, 210,  50, 255)
-PINK   = (255, 155, 155, 255)
-BLUE   = ( 60, 120, 220, 255)
 
 TR = (0, 0, 0, 0)
 W, H, CX = 126, 186, 63
 
-
-# ─────────────────────────── DRAW HELPERS ───────────────────
-
-def _lt(c, f=0.45):
-    return tuple(min(255, int(v + (255 - v) * f)) for v in c[:3]) + (255,)
-
-def _dk(c, f=0.32):
-    return tuple(int(v * (1 - f)) for v in c[:3]) + (255,)
-
-def blob(d, cx, cy, rx, ry, col):
-    """3D shaded ellipse — base + highlight + specular"""
-    d.ellipse([cx-rx, cy-ry, cx+rx, cy+ry], fill=col)
-    d.ellipse([cx-rx+2, cy-ry+1, cx+int(rx*.55), cy+int(ry*.50)], fill=_lt(col, .5))
-    sr = max(2, min(rx, ry)//4)
-    d.ellipse([cx-rx//3-sr, cy-ry//3-sr, cx-rx//3+sr, cy-ry//3+sr],
-              fill=(255, 255, 255, 200))
-
-def stick(d, x0, y0, x1, y1, col, w):
-    """3D shaded limb — thick line + highlight stripe"""
-    d.line([(x0, y0), (x1, y1)], fill=col, width=w)
-    hw = max(2, w // 3)
-    dx, dy = (x1 - x0), (y1 - y0)
-    le = math.hypot(dx, dy) or 1
-    nx, ny = -dy / le, dx / le          # perpendicular (left side = lit)
-    shift = hw // 2
-    d.line([(int(x0 + nx*shift), int(y0 + ny*shift)),
-             (int(x1 + nx*shift), int(y1 + ny*shift))],
-            fill=_lt(col, .55), width=max(1, hw - 1))
-
-def rbox(d, x0, y0, x1, y1, col, r=8):
-    """3D rounded rectangle — base + lit left + dark right"""
-    d.rounded_rectangle([x0, y0, x1, y1], radius=r, fill=col)
-    bw = x1 - x0
-    d.rounded_rectangle([x0+2, y0+2, x0+max(4, bw//3), y1-2], radius=r//2, fill=_lt(col, .42))
-    d.rounded_rectangle([x1-max(4, bw//4), y0+2, x1-2, y1-2],  radius=r//2, fill=_dk(col, .28))
-
-def hat_cone(d, bx, base_y, tip_x, tip_y):
-    """Polygon hat with lit / shadow faces"""
-    pts = [(bx-20, base_y), (bx+20, base_y), (tip_x+5, tip_y+6), (tip_x, tip_y)]
-    d.polygon(pts, fill=RED)
-    hi = [(bx-20, base_y), (bx-3,  base_y), (tip_x-3, tip_y+5), (tip_x-1, tip_y+1)]
-    d.polygon(hi, fill=LRED)
-    sh = [(bx+8,  base_y), (bx+20, base_y), (tip_x+5, tip_y+6)]
-    d.polygon(sh, fill=DRED)
+_ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
 
 
-# ─────────────────────────── RENDER ONE FRAME ───────────────
+# ─────────────────────────── SPRITE LOADER ──────────────────
 
-def render(pose: dict) -> Image.Image:
-    """
-    pose keys (all optional, defaults give standing neutral):
-      bdy   int   body-center Y
-      bl    int   body lean (x-offset of whole body)
-      la    tuple (x0,y0,x1,y1) left  arm line
-      ra    tuple (x0,y0,x1,y1) right arm line
-      ll    tuple (x0,y0,x1,y1) left  leg line
-      rl    tuple (x0,y0,x1,y1) right leg line
-      ht    int   hat-tip x-shift
-      fd    int   1=face right, -1=face left
-    """
-    bdy = pose.get('bdy', 125)
-    bl  = pose.get('bl',  0)
-    bx  = CX + bl
+def _load_anim(folder, flip=False):
+    """Load PNG sequence from assets/<folder>/, return list of (W×H) RGBA images."""
+    d = os.path.join(_ASSETS, folder)
+    files = sorted(glob.glob(os.path.join(d, '*.png')),
+                   key=lambda p: int(os.path.splitext(os.path.basename(p))[0]))
+    frames = []
+    for fp in files:
+        sprite = Image.open(fp).convert('RGBA')
+        sw, sh = sprite.size
+        frame = Image.new('RGBA', (W, H), TR)
+        x = (W - sw) // 2
+        y = H - sh - 2
+        frame.paste(sprite, (x, y), sprite)
+        if flip:
+            frame = frame.transpose(Image.FLIP_LEFT_RIGHT)
+        frames.append(frame)
+    return frames
 
-    la  = pose.get('la', (bx-23, bdy-19, bx-30, bdy+8))
-    ra  = pose.get('ra', (bx+23, bdy-19, bx+30, bdy+8))
-    ll  = pose.get('ll', (bx-10, bdy+20, bx-14, bdy+50))
-    rl  = pose.get('rl', (bx+10, bdy+20, bx+14, bdy+50))
-    ht  = pose.get('ht', 0)
-    fd  = pose.get('fd', 1)
-
-    img = Image.new('RGBA', (W, H), TR)
-
-    # ground shadow
-    sh = Image.new('RGBA', (W, H), TR)
-    ds = ImageDraw.Draw(sh)
-    ds.ellipse([bx-30, H-14, bx+30, H-4], fill=(0, 0, 0, 55))
-    sh = sh.filter(ImageFilter.GaussianBlur(5))
-    img = Image.alpha_composite(img, sh)
-    d = ImageDraw.Draw(img)
-
-    # ── boots ────────────────────────────────────────────────
-    blob(d, ll[2]-2, ll[3]+6,  11, 6, BLACK)
-    blob(d, rl[2]+2, rl[3]+6,  11, 6, BLACK)
-
-    # ── legs ─────────────────────────────────────────────────
-    stick(d, bx-9,  bdy+20, ll[2], ll[3], RED, 15)
-    stick(d, bx+9,  bdy+20, rl[2], rl[3], RED, 15)
-
-    # ── body ─────────────────────────────────────────────────
-    rbox(d, bx-24, bdy-20, bx+24, bdy+22, RED, r=10)
-    # collar
-    d.rounded_rectangle([bx-24, bdy-20, bx+24, bdy-12], radius=8, fill=WHITE)
-    # bottom trim
-    d.rounded_rectangle([bx-25, bdy+13, bx+25, bdy+22], radius=8, fill=WHITE)
-    # belt
-    d.rounded_rectangle([bx-24, bdy+2,  bx+24, bdy+10], radius=4,  fill=BLACK)
-    blob(d, bx, bdy+6, 7, 5, GOLD)
-    # buttons
-    for by in (bdy-7, bdy):
-        blob(d, bx, by, 3, 3, WHITE)
-
-    # ── arms ─────────────────────────────────────────────────
-    stick(d, la[0], la[1], la[2], la[3], RED, 15)
-    blob(d, la[2], la[3], 9, 7, WHITE)
-    stick(d, ra[0], ra[1], ra[2], ra[3], RED, 15)
-    blob(d, ra[2], ra[3], 9, 7, WHITE)
-
-    # ── head ─────────────────────────────────────────────────
-    hcy = bdy - 38
-    blob(d, bx, hcy, 22, 24, SKIN)
-    # beard
-    d.ellipse([bx-18, hcy+8, bx+18, hcy+28], fill=WHITE)
-    d.ellipse([bx-14, hcy+2, bx+14, hcy+12], fill=WHITE)
-    # eyes (shift with face direction)
-    eo = 3 * fd
-    blob(d, bx-5+eo, hcy-6, 4, 4, BLACK)
-    blob(d, bx+5+eo, hcy-6, 4, 4, BLACK)
-    d.ellipse([bx-7+eo, hcy-8, bx-3+eo, hcy-5], fill=(255,255,255,210))
-    d.ellipse([bx+3+eo, hcy-8, bx+7+eo, hcy-5], fill=(255,255,255,210))
-    # nose
-    blob(d, bx+eo//2, hcy+2, 5, 4, PINK)
-    # cheeks
-    d.ellipse([bx-17, hcy+3, bx-7,  hcy+10], fill=(*PINK[:3], 100))
-    d.ellipse([bx+7,  hcy+3, bx+17, hcy+10], fill=(*PINK[:3], 100))
-
-    # ── hat ──────────────────────────────────────────────────
-    hby = bdy - 62
-    d.rounded_rectangle([bx-24, hby, bx+24, hby+8], radius=6, fill=WHITE)
-    hat_cone(d, bx, hby, bx + ht, hby - 28)
-    blob(d, bx + ht + 2, hby - 28, 8, 8, WHITE)
-
-    return img
-
-
-# ─────────────────────────── ANIMATION DATA ─────────────────
-# Each anim = list of pose-dicts.
-# Legs/arms are absolute pixel coords; bx = CX + bl.
-
-def _W(bdy=125, bl=0):
-    """Walking poses helper (returns 4-frame walk cycle)"""
-    bx = CX + bl
-    return [
-        # frame 0 – right foot fwd
-        dict(bdy=bdy, bl=bl, fd=1,
-             la=(bx-23, bdy-19, bx-18, bdy+11),
-             ra=(bx+23, bdy-19, bx+32, bdy+5),
-             ll=(bx-9,  bdy+20, bx-5,  bdy+50),
-             rl=(bx+9,  bdy+20, bx+17, bdy+48)),
-        # frame 1 – neutral
-        dict(bdy=bdy, bl=bl, fd=1,
-             la=(bx-23, bdy-19, bx-29, bdy+8),
-             ra=(bx+23, bdy-19, bx+29, bdy+8),
-             ll=(bx-9,  bdy+20, bx-13, bdy+50),
-             rl=(bx+9,  bdy+20, bx+13, bdy+50)),
-        # frame 2 – left foot fwd
-        dict(bdy=bdy, bl=bl, fd=1,
-             la=(bx-23, bdy-19, bx-32, bdy+5),
-             ra=(bx+23, bdy-19, bx+18, bdy+11),
-             ll=(bx-9,  bdy+20, bx-17, bdy+48),
-             rl=(bx+9,  bdy+20, bx+5,  bdy+50)),
-        # frame 3 – neutral
-        dict(bdy=bdy, bl=bl, fd=1,
-             la=(bx-23, bdy-19, bx-29, bdy+8),
-             ra=(bx+23, bdy-19, bx+29, bdy+8),
-             ll=(bx-9,  bdy+20, bx-13, bdy+50),
-             rl=(bx+9,  bdy+20, bx+13, bdy+50)),
-    ]
-
-def _mirror(frames):
-    """Flip all poses (left ↔ right, fd=-1) for walking left"""
-    mirrored = []
-    for p in frames:
-        mp = dict(p)
-        mp['fd'] = -1
-        # reflect all x-coords around CX
-        def mx(x): return 2 * CX - x
-        for key in ('la', 'ra', 'll', 'rl'):
-            if key in mp:
-                x0,y0,x1,y1 = mp[key]
-                mp[key] = (mx(x0), y0, mx(x1), y1)
-        # swap left/right limbs
-        mp['la'], mp['ra'] = mp['ra'], mp['la']
-        mp['ll'], mp['rl'] = mp['rl'], mp['ll']
-        # reflect bl
-        mp['bl'] = -mp.get('bl', 0)
-        mp['bdy'] = p['bdy']
-        mirrored.append(mp)
-    return mirrored
 
 def _build_anims():
-    bdy = 125
-    bx  = CX
+    walk_r = _load_anim('walk')
+    walk_l = _load_anim('walk', flip=True)
+    idle   = _load_anim('idle')
+    shimmy = _load_anim('jump')
+    wave   = _load_anim('slide')
+    groove = _load_anim('run')
 
-    walk_r = _W(bdy, 0)
-    walk_l = _mirror(walk_r)
-
-    # ── idle ────────────────────────────────────────────────
-    idle = []
-    for i in range(4):
-        dy = [0, -2, -3, -2][i]
-        idle.append(dict(bdy=bdy+dy, bl=0, fd=1,
-            la=(bx-23, bdy+dy-19, bx-29, bdy+dy+8),
-            ra=(bx+23, bdy+dy-19, bx+29, bdy+dy+8),
-            ll=(bx-9,  bdy+dy+20, bx-13, bdy+dy+50),
-            rl=(bx+9,  bdy+dy+20, bx+13, bdy+dy+50)))
-
-    # ── shimmy ──────────────────────────────────────────────
-    shimmy = []
-    for i in range(8):
-        lean  = int(12 * math.sin(math.radians(i * 45)))
-        bx2   = bx + lean
-        arm_u = int(14 * abs(math.sin(math.radians(i * 45))))
-        shimmy.append(dict(bdy=bdy, bl=lean, fd=1, ht=lean//3,
-            la=(bx2-23, bdy-19, bx2-28-arm_u, bdy+8-arm_u),
-            ra=(bx2+23, bdy-19, bx2+28+arm_u, bdy+8-arm_u),
-            ll=(bx2-9,  bdy+20, bx2-13,       bdy+50),
-            rl=(bx2+9,  bdy+20, bx2+13,       bdy+50)))
-
-    # ── wave ────────────────────────────────────────────────
-    wave = []
-    for i in range(8):
-        ang   = math.radians(i * 22.5)   # 0..157.5°, right arm sweeps up
-        arm_r = 30
-        rx1   = bx + 23
-        ry1   = bdy - 19
-        rx2   = int(rx1 + arm_r * math.sin(ang))
-        ry2   = int(ry1 - arm_r * math.cos(ang) + arm_r)
-        wave.append(dict(bdy=bdy, bl=0, fd=1, ht=i-4,
-            la=(bx-23, bdy-19, bx-29, bdy+8),
-            ra=(rx1, ry1, rx2, ry2),
-            ll=(bx-9, bdy+20, bx-13, bdy+50),
-            rl=(bx+9, bdy+20, bx+13, bdy+50)))
-
-    # ── groove ──────────────────────────────────────────────
-    groove = []
-    for i in range(8):
-        lean  = int(10 * math.sin(math.radians(i * 45)))
-        bx2   = bx + lean
-        # arms swing opposite to lean, with bounce
-        la_sw = int(8 * math.sin(math.radians(i * 45 + 180)))
-        ra_sw = int(8 * math.sin(math.radians(i * 45)))
-        dy    = abs(lean) // 4  # slight body dip
-        groove.append(dict(bdy=bdy+dy, bl=lean, fd=1, ht=lean//4,
-            la=(bx2-23, bdy+dy-19, bx2-24+la_sw, bdy+dy+12),
-            ra=(bx2+23, bdy+dy-19, bx2+24+ra_sw, bdy+dy+12),
-            ll=(bx2-9,  bdy+dy+20, bx2-12-lean//3, bdy+dy+50),
-            rl=(bx2+9,  bdy+dy+20, bx2+12-lean//3, bdy+dy+50)))
-
-    # ── spin (squish base frame for 3D rotation) ─────────────
-    base_spin = render(dict(bdy=bdy, la=(bx-23,bdy-19,bx-22,bdy+14),
-                            ra=(bx+23,bdy-19,bx+22,bdy+14),
-                            ll=(bx-9,bdy+20,bx-12,bdy+50),
-                            rl=(bx+9,bdy+20,bx+12,bdy+50)))
+    base = idle[0] if idle else Image.new('RGBA', (W, H), TR)
     spin_widths = [W, 96, 65, 30, 10, 30, 65, 96]
     spin_frames = []
     for sw in spin_widths:
         if sw == W:
-            spin_frames.append(base_spin.copy())
+            spin_frames.append(base.copy())
         else:
-            sq = base_spin.resize((sw, H), Image.LANCZOS)
+            sq = base.resize((sw, H), Image.LANCZOS)
             frame = Image.new('RGBA', (W, H), TR)
             frame.paste(sq, ((W - sw) // 2, 0))
             spin_frames.append(frame)
 
     return {
-        'walk_r': walk_r,
-        'walk_l': walk_l,
-        'idle':   idle,
-        'shimmy': shimmy,
-        'wave':   wave,
-        'groove': groove,
-        '_spin_frames': spin_frames,  # pre-rendered
+        'walk_r':       walk_r,
+        'walk_l':       walk_l,
+        'idle':         idle,
+        'shimmy':       shimmy,
+        'wave':         wave,
+        'groove':       groove,
+        '_spin_frames': spin_frames,
     }
 
 
@@ -726,13 +493,9 @@ class SantaPetApp:
 
     # ── pre-render all frames ─────────────────────────────────
     def _pre_render(self):
-        for key, poses in ANIM.items():
-            self._tk_frames[key] = [
-                ImageTk.PhotoImage(render(p)) for p in poses
-            ]
-        self._tk_frames['spin'] = [
-            ImageTk.PhotoImage(f) for f in SPIN_FRAMES
-        ]
+        for key, frames in ANIM.items():
+            self._tk_frames[key] = [ImageTk.PhotoImage(f) for f in frames]
+        self._tk_frames['spin'] = [ImageTk.PhotoImage(f) for f in SPIN_FRAMES]
 
     def _get_tk_frame(self):
         return self._tk_frames[self.anim][self.frame_idx % len(self._tk_frames[self.anim])]
