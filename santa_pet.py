@@ -8,6 +8,8 @@ import time
 import random
 import os
 import sys
+
+from todo_manager import TodoWindow
 import psutil
 import shutil
 import tempfile
@@ -516,6 +518,7 @@ class SantaPetApp:
         self._water   = WaterPopup()
         self._health  = PCHealth()
         self._cleaner = CacheCleaner()
+        self._todo    = TodoWindow(self.root, on_remind_cb=self._task_reminder)
 
         self._place()
         self._tick_anim()
@@ -623,6 +626,7 @@ class SantaPetApp:
         m.add_command(label="💧  Water Reminder",  command=lambda: self._water.show(self.root))
         m.add_command(label="🏥  PC Health Check", command=lambda: self._health.show(self.root))
         m.add_command(label="🧹  Clean Cache",     command=lambda: self._cleaner.show(self.root))
+        m.add_command(label="📋  To-Do List",      command=self._todo.show)
         m.add_separator()
         lbl = "▶  Resume" if self.paused else "⏸  Pause"
         m.add_command(label=lbl, command=self._toggle_pause)
@@ -669,6 +673,31 @@ class SantaPetApp:
         tk.Button(win, text="Save", command=apply,
                   bg='#238636', fg='white', font=('Arial', 11, 'bold'),
                   relief='flat', padx=30, pady=7, cursor='hand2').pack(pady=18)
+
+    def _task_reminder(self, task):
+        self._say(f"⏰ {task['title'][:22]}", 8000)
+        self.root.after(500, lambda: self._show_task_popup(task))
+
+    def _show_task_popup(self, task):
+        w = tk.Toplevel(self.root)
+        w.title("Task Reminder")
+        w.geometry("320x180+{}+{}".format(
+            self.root.winfo_screenwidth()//2 - 160,
+            self.root.winfo_screenheight()//2 - 90))
+        w.resizable(False, False)
+        w.attributes('-topmost', True)
+        w.configure(bg='#0d1117')
+        tk.Label(w, text="⏰", font=('Segoe UI Emoji', 36),
+                 bg='#0d1117').pack(pady=(15, 4))
+        tk.Label(w, text=task['title'], font=('Arial', 13, 'bold'),
+                 bg='#0d1117', fg='#e6edf3', wraplength=280).pack()
+        if task.get('note'):
+            tk.Label(w, text=task['note'], font=('Arial', 9),
+                     bg='#0d1117', fg='#8b949e').pack(pady=2)
+        tk.Button(w, text="Got it! ✅", command=w.destroy,
+                  bg='#238636', fg='white', font=('Arial', 11, 'bold'),
+                  relief='flat', padx=20, pady=6, cursor='hand2').pack(pady=12)
+        w.after(60000, lambda: w.destroy() if w.winfo_exists() else None)
 
     def _quit(self):
         if messagebox.askyesno("Exit", "Close Santa Pet?", parent=self.root):
