@@ -25,7 +25,7 @@ DATA_DIR = Path(os.environ.get('APPDATA', Path.home())) / 'SantaPet'
 DATA_DIR.mkdir(exist_ok=True)
 TASKS_FILE   = DATA_DIR / 'tasks.json'
 TOKEN_FILE   = DATA_DIR / 'google_token.json'
-CREDS_FILE   = DATA_DIR / 'google_credentials.json'
+CREDS_FILE   = DATA_DIR / 'credentials.json'   # downloaded from Google Cloud Console
 
 
 # ─────────────────────────── LOCAL STORE ─────────────────────
@@ -96,22 +96,48 @@ class GoogleTasksSync:
         return self._service is not None
 
     def connect(self):
-        if not self.is_configured():
-            return False, "No credentials.json found"
+        """Run OAuth flow. Call from a background thread — opens a browser window."""
+        if not GOOGLE_AVAILABLE:
+            return False, "Google libraries not installed. Run: pip install google-auth-oauthlib google-api-python-client"
+        if not CREDS_FILE.exists():
+            return False, f"credentials.json not found at:\n{CREDS_FILE}"
         try:
             creds = None
+
+            # 1. Try loading a saved token
             if TOKEN_FILE.exists():
-                creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-            if not creds or not creds.valid:
-                if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+                except Exception:
+                    TOKEN_FILE.unlink(missing_ok=True)
+                    creds = None
+
+            # 2. Refresh if expired
+            if creds and creds.expired and creds.refresh_token:
+                try:
                     creds.refresh(Request())
-                else:
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        str(CREDS_FILE), SCOPES)
-                    creds = flow.run_local_server(port=0)
+                except Exception:
+                    creds = None   # force re-auth
+
+            # 3. Full OAuth browser flow
+            if not creds or not creds.valid:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    str(CREDS_FILE), SCOPES)
+                # run_local_server opens the browser and waits for the redirect
+                creds = flow.run_local_server(
+                    port=0,
+                    open_browser=True,
+                    success_message=(
+                        "Santa Pet is now connected to Google Tasks! "
+                        "You can close this tab."
+                    ),
+                )
                 TOKEN_FILE.write_text(creds.to_json())
+
+            # 4. Build service
             self._service = build('tasks', 'v1', credentials=creds)
-            # find or create "Santa Pet" tasklist
+
+            # 5. Find or create "Santa Pet" tasklist
             lists = self._service.tasklists().list().execute()
             for lst in lists.get('items', []):
                 if lst['title'] == 'Santa Pet':
@@ -121,16 +147,24 @@ class GoogleTasksSync:
                 new = self._service.tasklists().insert(
                     body={'title': 'Santa Pet'}).execute()
                 self._list_id = new['id']
-            return True, "Connected!"
+
+            return True, "Connected to Google Tasks!"
+
         except Exception as e:
             self._service = None
-            return False, str(e)
+            self._list_id = None
+            err = str(e)
+            if 'access_denied' in err.lower():
+                return False, "Access denied — check your Google account permissions"
+            if 'invalid_client' in err.lower():
+                return False, "Invalid credentials — re-download credentials.json"
+            return False, err[:120]
 
     def disconnect(self):
         if TOKEN_FILE.exists():
-            TOKEN_FILE.unlink()
-        self._service = None
-        self._list_id = None
+            TOKEN_FILE.unlink(missing_ok=True)
+        self._service  = None
+        self._list_id  = None
 
     def fetch_all(self):
         if not self.is_connected():
