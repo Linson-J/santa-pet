@@ -543,6 +543,120 @@ class WaterPopup:
         w.after(30000, lambda: w.destroy() if w.winfo_exists() else None)
 
 
+# ─────────────────────────── FLOAT MENU ─────────────────────
+
+BG0 = '#0d1117'   # darkest
+BG1 = '#161b22'   # panel
+BG2 = '#21262d'   # hover
+BOR = '#30363d'   # border
+FG  = '#e6edf3'
+SUB = '#8b949e'
+ACC = '#58a6ff'
+GRN = '#3fb950'
+RED_C = '#f85149'
+
+
+class FloatMenu:
+    """Custom dark floating menu — replaces the OS context menu."""
+
+    def __init__(self, parent):
+        self._parent = parent
+        self._win    = None
+
+    def show(self, mx, my, sections):
+        """
+        sections: list of lists of items.
+        item tuple: (icon, title, subtitle_or_None, command_or_None, danger_bool=False)
+        """
+        if self._win and self._win.winfo_exists():
+            self._win.destroy()
+
+        win = tk.Toplevel(self._parent)
+        win.overrideredirect(True)
+        win.attributes('-topmost', True)
+        self._win = win
+
+        # border via outer frame
+        outer = tk.Frame(win, bg=BOR, padx=1, pady=1)
+        outer.pack(expand=True, fill='both')
+        body = tk.Frame(outer, bg=BG1, pady=4)
+        body.pack(expand=True, fill='both')
+
+        for si, section in enumerate(sections):
+            if si > 0:
+                tk.Frame(body, height=1, bg=BOR).pack(fill='x', pady=2)
+            for item in section:
+                self._row(body, item, win)
+
+        # position — keep inside screen
+        win.update_idletasks()
+        mw = win.winfo_reqwidth()
+        mh = win.winfo_reqheight()
+        sw = win.winfo_screenwidth()
+        sh = win.winfo_screenheight()
+        x = min(mx, sw - mw - 6)
+        y = min(my, sh - mh - 6)
+        win.geometry(f"+{x}+{y}")
+
+        win.bind('<FocusOut>', lambda e: self._safe_destroy())
+        win.bind('<Escape>',   lambda e: self._safe_destroy())
+        win.focus_set()
+
+    def _safe_destroy(self):
+        if self._win and self._win.winfo_exists():
+            self._win.destroy()
+
+    def _row(self, parent, item, win):
+        icon, title, sub, cmd, *rest = tuple(item) + (None,) * (5 - len(item))
+        danger = bool(rest[0]) if rest else False
+        fg_col = RED_C if danger else FG
+
+        row = tk.Frame(parent, bg=BG1, cursor='hand2' if cmd else 'arrow')
+        row.pack(fill='x')
+
+        # icon cell
+        ic = tk.Label(row, text=icon, font=('Segoe UI Emoji', 13),
+                      bg=BG1, fg=fg_col, width=3, anchor='center')
+        ic.pack(side='left', padx=(6, 2), pady=6)
+
+        # text cell
+        tf = tk.Frame(row, bg=BG1)
+        tf.pack(side='left', fill='x', expand=True, padx=(0, 14))
+
+        tl = tk.Label(tf, text=title, font=('Arial', 10),
+                      bg=BG1, fg=fg_col, anchor='w')
+        tl.pack(fill='x', pady=(5 if sub else 6, 0))
+
+        sl = None
+        if sub:
+            sl = tk.Label(tf, text=sub, font=('Arial', 8),
+                          bg=BG1, fg=SUB, anchor='w')
+            sl.pack(fill='x', pady=(0, 5))
+
+        # collect every widget in the row for hover binding
+        all_w = [row, ic, tf, tl] + ([sl] if sl else [])
+
+        def _enter(e, ws=all_w):
+            for w in ws:
+                try: w.configure(bg=BG2)
+                except: pass
+        def _leave(e, ws=all_w):
+            for w in ws:
+                try: w.configure(bg=BG1)
+                except: pass
+
+        for w in all_w:
+            w.bind('<Enter>', _enter)
+            w.bind('<Leave>', _leave)
+
+        if cmd:
+            def _click(e, c=cmd):
+                self._safe_destroy()
+                c()
+            for w in all_w:
+                w.bind('<Button-1>', _click)
+
+
 # ─────────────────────────── MAIN APP ────────────────────────
 
 class SantaPetApp:
@@ -599,10 +713,11 @@ class SantaPetApp:
         self._dx = self._dy = 0
 
         # helpers
-        self._water   = WaterPopup()
-        self._health  = PCHealth()
-        self._cleaner = CacheCleaner()
-        self._todo    = TodoWindow(self.root, on_remind_cb=self._task_remind)
+        self._water       = WaterPopup()
+        self._health      = PCHealth()
+        self._cleaner     = CacheCleaner()
+        self._todo        = TodoWindow(self.root, on_remind_cb=self._task_remind)
+        self._float_menu  = FloatMenu(self.root)
 
         self._place()
         self._tick()
@@ -719,20 +834,75 @@ class SantaPetApp:
 
     # ── context menu ─────────────────────────────────────────
     def _menu(self, e):
-        m = tk.Menu(self.root, tearoff=0, bg='#161b22', fg='#e6edf3',
-                    activebackground='#21262d', activeforeground='#58a6ff',
-                    font=('Arial', 10))
-        m.add_command(label="💧  Water Reminder",  command=lambda: self._water.show(self.root))
-        m.add_command(label="🏥  PC Health Check", command=lambda: self._health.show(self.root))
-        m.add_command(label="🧹  Clean Cache",     command=lambda: self._cleaner.show(self.root))
-        m.add_command(label="📋  To-Do List",      command=self._todo.show)
-        m.add_separator()
-        lbl = "▶  Resume" if self.paused else "⏸  Pause"
-        m.add_command(label=lbl, command=self._toggle_pause)
-        m.add_command(label="⚙️  Settings",        command=self._settings)
-        m.add_separator()
-        m.add_command(label="❌  Exit",            command=self._quit)
-        m.tk_popup(e.x_root, e.y_root)
+        # live stats for subtitles
+        try:
+            cpu = psutil.cpu_percent(interval=0.1)
+            ram = psutil.virtual_memory().percent
+            health_sub = f"CPU {cpu:.0f}%  ·  RAM {ram:.0f}%"
+        except Exception:
+            health_sub = "Live health report"
+
+        # task count
+        try:
+            from todo_manager import LocalTaskStore
+            active = sum(1 for t in LocalTaskStore().load() if not t['done'])
+            task_sub = f"{active} active task{'s' if active != 1 else ''}"
+        except Exception:
+            task_sub = "Manage your tasks"
+
+        # Google Tasks status
+        gt = self._todo.google
+        if gt.is_connected():
+            gt_sub, gt_cmd = "● Connected — tap to disconnect", self._gtasks_disconnect
+        elif gt.is_configured():
+            gt_sub, gt_cmd = "○ Tap to connect", self._gtasks_connect
+        else:
+            gt_sub, gt_cmd = "○ Setup credentials to enable", self._gtasks_setup
+
+        pause_icon  = "▶" if self.paused else "⏸"
+        pause_title = "Resume Walking" if self.paused else "Pause Walking"
+
+        sections = [
+            [
+                ("💧", "Water Reminder",  f"Remind every {self._water_mins} min",
+                 lambda: self._water.show(self.root)),
+                ("🏥", "PC Health Check", health_sub,
+                 lambda: self._health.show(self.root)),
+                ("🧹", "Clean Cache",     "Scan & remove junk files",
+                 lambda: self._cleaner.show(self.root)),
+                ("📋", "To-Do List",      task_sub,
+                 self._todo.show),
+                ("🔗", "Google Tasks",    gt_sub,
+                 gt_cmd),
+            ],
+            [
+                (pause_icon, pause_title, None, self._toggle_pause),
+                ("⚙️",       "Settings",  "Speed & reminder interval", self._settings),
+            ],
+            [
+                ("❌", "Exit", None, self._quit, True),
+            ],
+        ]
+        self._float_menu.show(e.x_root, e.y_root, sections)
+
+    # ── Google Tasks quick-connect ────────────────────────────
+    def _gtasks_connect(self):
+        self._say("Connecting Google Tasks… 🔗", 4000)
+        def _work():
+            ok, msg = self._todo.google.connect()
+            self.root.after(0, lambda: self._say(
+                "Google Tasks connected! ✅" if ok else f"❌ {msg[:35]}", 5000))
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _gtasks_disconnect(self):
+        self._todo.google.disconnect()
+        self._say("Disconnected from Google Tasks", 3000)
+
+    def _gtasks_setup(self):
+        # Open the todo window which has the full setup flow
+        self._todo.show()
+        self.root.after(300, lambda: self._todo._show_google_setup()
+                        if hasattr(self._todo, '_show_google_setup') else None)
 
     def _toggle_pause(self):
         self.paused = not self.paused
