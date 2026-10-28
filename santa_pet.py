@@ -293,20 +293,33 @@ class CacheCleaner:
 class WaterPopup:
     def show(self, parent):
         w = tk.Toplevel(parent)
-        w.title("Stay Hydrated!")
-        w.geometry("320x200+{}+{}".format(
-            w.winfo_screenwidth()//2-160, w.winfo_screenheight()//2-100))
+        w.title("Hydration Reminder")
+        cx = w.winfo_screenwidth()//2 - 170
+        cy = w.winfo_screenheight()//2 - 120
+        w.geometry(f"340x240+{cx}+{cy}")
         w.resizable(False, False)
         w.attributes('-topmost', True)
-        w.configure(bg='#0a3d62')
-        tk.Label(w, text="💧", font=('Segoe UI Emoji', 44), bg='#0a3d62').pack(pady=(15,2))
-        tk.Label(w, text="Time to drink water!", font=('Arial', 14, 'bold'),
-                 bg='#0a3d62', fg='#ffffff').pack()
-        tk.Label(w, text="Stay hydrated! 🥤", font=('Arial', 10),
-                 bg='#0a3d62', fg='#74b9ff').pack(pady=4)
-        tk.Button(w, text="Thanks Santa! 🎅", command=w.destroy,
-                  bg='#ffffff', fg='#0a3d62', font=('Arial', 11, 'bold'),
-                  relief='flat', padx=20, pady=6, cursor='hand2').pack(pady=12)
+        w.configure(bg=BG0)
+
+        # ── header ──────────────────────────────────────────────
+        hdr = tk.Frame(w, bg=BG1, pady=14)
+        hdr.pack(fill='x')
+        tk.Label(hdr, text="💧", font=('Segoe UI Emoji', 40),
+                 bg=BG1).pack()
+        tk.Label(hdr, text="Time to Drink Water!", font=('Arial', 14, 'bold'),
+                 bg=BG1, fg=ACC).pack(pady=(2, 0))
+
+        # ── body ────────────────────────────────────────────────
+        tk.Frame(w, height=1, bg=BOR).pack(fill='x')
+        tk.Label(w, text="Santa says: Stay hydrated! 🥤",
+                 font=('Arial', 10), bg=BG0, fg=SUB).pack(pady=14)
+
+        # ── button ──────────────────────────────────────────────
+        btn = tk.Button(w, text="Thanks Santa! 🎅", command=w.destroy,
+                        bg='#1f6feb', fg=FG, font=('Arial', 11, 'bold'),
+                        relief='flat', padx=24, pady=8, cursor='hand2',
+                        activebackground='#388bfd', activeforeground=FG)
+        btn.pack(pady=10)
         w.after(30000, lambda: w.destroy() if w.winfo_exists() else None)
 
 
@@ -673,28 +686,40 @@ class SantaPetApp:
 
     def _settings(self):
         win = tk.Toplevel(self.root)
-        win.title("⚙️ Settings")
-        win.geometry("300x220+{}+{}".format(
-            self.sw//2-150, self.sh//2-110))
+        win.title("Settings")
+        win.geometry("320x280+{}+{}".format(
+            self.sw//2-160, self.sh//2-140))
         win.resizable(False, False)
         win.attributes('-topmost', True)
-        win.configure(bg='#0d1117')
+        win.configure(bg=BG0)
+
+        # ── header ──────────────────────────────────────────────
+        hdr = tk.Frame(win, bg=BG1, pady=10)
+        hdr.pack(fill='x')
+        tk.Label(hdr, text="⚙️  Settings", font=('Arial', 14, 'bold'),
+                 bg=BG1, fg=ACC).pack()
+        tk.Label(hdr, text="Speed & reminder preferences",
+                 font=('Arial', 9), bg=BG1, fg=SUB).pack(pady=(2,0))
+        tk.Frame(win, height=1, bg=BOR).pack(fill='x')
+
+        body = tk.Frame(win, bg=BG0, padx=20)
+        body.pack(fill='both', expand=True)
 
         def lbl(t):
-            tk.Label(win, text=t, bg='#0d1117', fg='#c9d1d9',
-                     font=('Arial', 10)).pack(pady=(10, 0))
+            tk.Label(body, text=t, bg=BG0, fg=FG,
+                     font=('Arial', 10)).pack(anchor='w', pady=(12, 0))
 
-        lbl("Walking Speed  (1 = slow · 8 = fast)")
+        lbl("🚶 Walking Speed  (1 = slow · 8 = fast)")
         spd = tk.IntVar(value=self.speed)
-        tk.Scale(win, from_=1, to=8, orient='horizontal', variable=spd,
-                 bg='#0d1117', fg='#c9d1d9', troughcolor='#21262d',
-                 highlightthickness=0, length=230).pack()
+        tk.Scale(body, from_=1, to=8, orient='horizontal', variable=spd,
+                 bg=BG0, fg=FG, troughcolor=BG2,
+                 highlightthickness=0, length=260).pack(fill='x')
 
-        lbl("Water Reminder (minutes)")
+        lbl("💧 Water Reminder (minutes)")
         wtr = tk.IntVar(value=self._water_mins)
-        tk.Scale(win, from_=5, to=120, orient='horizontal', variable=wtr,
-                 bg='#0d1117', fg='#c9d1d9', troughcolor='#21262d',
-                 highlightthickness=0, length=230).pack()
+        tk.Scale(body, from_=5, to=120, orient='horizontal', variable=wtr,
+                 bg=BG0, fg=FG, troughcolor=BG2,
+                 highlightthickness=0, length=260).pack(fill='x')
 
         def apply():
             self.speed       = spd.get()
@@ -702,9 +727,11 @@ class SantaPetApp:
             win.destroy()
             self._say("Settings saved ✅", 2000)
 
-        tk.Button(win, text="Save", command=apply,
-                  bg='#238636', fg='white', font=('Arial', 11, 'bold'),
-                  relief='flat', padx=30, pady=8, cursor='hand2').pack(pady=18)
+        tk.Frame(win, height=1, bg=BOR).pack(fill='x')
+        tk.Button(win, text="Save Settings", command=apply,
+                  bg=GRN, fg='white', font=('Arial', 11, 'bold'),
+                  relief='flat', padx=24, pady=8, cursor='hand2',
+                  activebackground='#56d364', activeforeground='white').pack(pady=14)
 
     # ── task reminder callback ────────────────────────────────
     def _task_remind(self, task):
@@ -714,19 +741,28 @@ class SantaPetApp:
     def _show_task_popup(self, task):
         w = tk.Toplevel(self.root)
         w.title("Task Reminder")
-        w.geometry("320x180+{}+{}".format(self.sw//2-160, self.sh//2-90))
+        w.geometry("340x220+{}+{}".format(self.sw//2-170, self.sh//2-110))
         w.resizable(False, False)
         w.attributes('-topmost', True)
-        w.configure(bg='#0d1117')
-        tk.Label(w, text="⏰", font=('Segoe UI Emoji', 36), bg='#0d1117').pack(pady=(15,4))
+        w.configure(bg=BG0)
+
+        hdr = tk.Frame(w, bg=BG1, pady=12)
+        hdr.pack(fill='x')
+        tk.Label(hdr, text="⏰", font=('Segoe UI Emoji', 32), bg=BG1).pack()
+        tk.Label(hdr, text="Task Reminder", font=('Arial', 12, 'bold'),
+                 bg=BG1, fg=ACC).pack(pady=(2,0))
+
+        tk.Frame(w, height=1, bg=BOR).pack(fill='x')
         tk.Label(w, text=task['title'], font=('Arial', 13, 'bold'),
-                 bg='#0d1117', fg='#e6edf3', wraplength=280).pack()
+                 bg=BG0, fg=FG, wraplength=300).pack(pady=(12,2))
         if task.get('note'):
             tk.Label(w, text=task['note'], font=('Arial', 9),
-                     bg='#0d1117', fg='#8b949e').pack(pady=2)
+                     bg=BG0, fg=SUB).pack(pady=2)
+
         tk.Button(w, text="Got it! ✅", command=w.destroy,
-                  bg='#238636', fg='white', font=('Arial', 11, 'bold'),
-                  relief='flat', padx=20, pady=6, cursor='hand2').pack(pady=12)
+                  bg=GRN, fg='white', font=('Arial', 11, 'bold'),
+                  relief='flat', padx=20, pady=7, cursor='hand2',
+                  activebackground='#56d364', activeforeground='white').pack(pady=14)
         w.after(60000, lambda: w.destroy() if w.winfo_exists() else None)
 
     def _quit(self):
