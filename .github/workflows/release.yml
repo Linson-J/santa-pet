@@ -1,0 +1,51 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller pillow psutil pystray
+
+      - name: Build exe
+        run: |
+          pyinstaller --onefile --windowed --name "SantaPet" santa_pet.py
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "Santa Pet ${{ github.ref_name }}"
+          body: |
+            ## 🎅 Santa Pet ${{ github.ref_name }}
+
+            A low-memory desktop Santa that walks across your screen and helps keep your PC healthy!
+
+            ### Features
+            - 🎅 Animated walking Santa on your desktop
+            - 💧 Drink-water reminders (customizable interval)
+            - 🏥 PC Doctor — live CPU / RAM / Disk health report
+            - 🧹 Cache Cleaner — free up temp/browser junk files
+            - ⚙️ Settings: adjust speed & reminder interval
+            - 🖱 Drag Santa anywhere on screen
+
+            ### How to use
+            1. Download **SantaPet.exe**
+            2. Double-click to run — no install needed
+            3. Right-click Santa for the menu
+          files: dist/SantaPet.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
