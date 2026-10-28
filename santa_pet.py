@@ -618,10 +618,10 @@ class SantaPetApp:
         except Exception:
             health_sub = "Live health report"
 
-        # task count
+        # task count — prefer live Google Tasks cache, fall back to local
         try:
-            from todo_manager import LocalTaskStore
-            active = sum(1 for t in LocalTaskStore().load() if not t['done'])
+            tasks = self._todo._tasks if self._todo._tasks else self._todo._cache.load()
+            active = sum(1 for t in tasks if not t['done'])
             task_sub = f"{active} active task{'s' if active != 1 else ''}"
         except Exception:
             task_sub = "Manage your tasks"
