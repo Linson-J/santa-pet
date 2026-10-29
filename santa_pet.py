@@ -3,9 +3,21 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
-import threading, random, os, glob, psutil, shutil, tempfile
+import threading, random, os, glob, psutil, shutil, tempfile, math
 from datetime import datetime
 from todo_manager import TodoWindow
+
+try:
+    import sv_ttk
+    _HAS_SVTTK = True
+except ImportError:
+    _HAS_SVTTK = False
+
+try:
+    import pywinstyles
+    _HAS_PYWINSTYLES = True
+except ImportError:
+    _HAS_PYWINSTYLES = False
 
 TR = (0, 0, 0, 0)
 W, H, CX = 126, 186, 63
@@ -83,21 +95,22 @@ class PCHealth:
     def show(self, parent):
         win = tk.Toplevel(parent)
         win.title("PC Doctor — Health Report")
-        win.geometry("460x560")
+        win.geometry("480x580")
         win.resizable(True, True)
         win.attributes('-topmost', True)
-        win.configure(bg='#0d1117')
-        hdr = tk.Frame(win, bg='#161b22', pady=10)
+        win.configure(bg=BG0)
+        _apply_win11(win)
+        hdr = tk.Frame(win, bg=BG1, pady=12)
         hdr.pack(fill='x')
-        tk.Label(hdr, text="🏥  PC Doctor", font=('Arial', 15, 'bold'),
-                 bg='#161b22', fg='#58a6ff').pack()
+        tk.Label(hdr, text="🏥  PC Doctor", font=('Segoe UI Variable', 15, 'bold'),
+                 bg=BG1, fg=ACC).pack()
         tk.Label(hdr, text=datetime.now().strftime('%Y-%m-%d  %H:%M:%S'),
-                 font=('Arial', 9), bg='#161b22', fg='#8b949e').pack()
-        container = tk.Frame(win, bg='#0d1117')
+                 font=('Segoe UI Variable', 9), bg=BG1, fg=SUB).pack()
+        container = tk.Frame(win, bg=BG0)
         container.pack(fill='both', expand=True)
-        cv = tk.Canvas(container, bg='#0d1117', highlightthickness=0)
+        cv = tk.Canvas(container, bg=BG0, highlightthickness=0)
         sb = ttk.Scrollbar(container, orient='vertical', command=cv.yview)
-        frm = tk.Frame(cv, bg='#0d1117')
+        frm = tk.Frame(cv, bg=BG0)
         frm.bind('<Configure>', lambda e: cv.configure(scrollregion=cv.bbox('all')))
         cv.create_window((0, 0), window=frm, anchor='nw')
         cv.configure(yscrollcommand=sb.set)
@@ -105,23 +118,23 @@ class PCHealth:
         sb.pack(side='right', fill='y')
 
         def sec(t):
-            f = tk.Frame(frm, bg='#21262d', pady=5, padx=8)
-            f.pack(fill='x', padx=8, pady=(8, 2))
-            tk.Label(f, text=t, font=('Arial', 10, 'bold'),
-                     bg='#21262d', fg='#58a6ff').pack(anchor='w')
+            f = tk.Frame(frm, bg=BG1, pady=6, padx=10)
+            f.pack(fill='x', padx=10, pady=(10, 2))
+            tk.Label(f, text=t, font=('Segoe UI Variable', 10, 'bold'),
+                     bg=BG1, fg=ACC).pack(anchor='w')
 
         def row(label, val, pct=None):
-            f = tk.Frame(frm, bg='#161b22', padx=10, pady=5)
-            f.pack(fill='x', padx=8, pady=1)
-            color = '#3fb950' if (pct or 0) < 60 else '#d29922' if (pct or 0) < 85 else '#f85149'
-            tk.Label(f, text=label, font=('Arial', 9), bg='#161b22',
-                     fg='#c9d1d9', width=22, anchor='w').grid(row=0, column=0)
-            tk.Label(f, text=val, font=('Arial', 9, 'bold'),
-                     bg='#161b22', fg=color).grid(row=0, column=1, padx=10)
+            f = tk.Frame(frm, bg=BG1, padx=12, pady=6)
+            f.pack(fill='x', padx=10, pady=1)
+            color = GRN if (pct or 0) < 60 else YEL if (pct or 0) < 85 else RED_C
+            tk.Label(f, text=label, font=('Segoe UI Variable', 9), bg=BG1,
+                     fg=FG, width=22, anchor='w').grid(row=0, column=0)
+            tk.Label(f, text=val, font=('Segoe UI Variable', 9, 'bold'),
+                     bg=BG1, fg=color).grid(row=0, column=1, padx=10)
             if pct is not None:
-                bar = tk.Canvas(f, width=100, height=8, bg='#30363d', highlightthickness=0)
+                bar = tk.Canvas(f, width=110, height=6, bg=BOR, highlightthickness=0)
                 bar.grid(row=0, column=2, padx=5)
-                bar.create_rectangle(0, 0, pct, 8, fill=color, width=0)
+                bar.create_rectangle(0, 0, pct * 1.1, 6, fill=color, width=0)
 
         sec("⚡ Processor")
         cpu = psutil.cpu_percent(interval=0.3)
@@ -163,9 +176,7 @@ class PCHealth:
             row("Processes", str(len(psutil.pids())))
         except Exception:
             pass
-        tk.Button(win, text="Close", command=win.destroy,
-                  bg='#238636', fg='white', font=('Arial', 11, 'bold'),
-                  relief='flat', padx=25, pady=7).pack(pady=10)
+        _styled_btn(win, "Close", win.destroy, accent=True).pack(pady=12)
 
 
 # ─────────────────────────── CACHE CLEANER ───────────────────
@@ -217,33 +228,31 @@ class CacheCleaner:
     def show(self, parent):
         win = tk.Toplevel(parent)
         win.title("🧹 Cache Cleaner")
-        win.geometry("500x540")
+        win.geometry("520x560")
         win.resizable(False, False)
         win.attributes('-topmost', True)
-        win.configure(bg='#0d1117')
-        hdr = tk.Frame(win, bg='#161b22', pady=10)
+        win.configure(bg=BG0)
+        _apply_win11(win)
+        hdr = tk.Frame(win, bg=BG1, pady=12)
         hdr.pack(fill='x')
         tk.Label(hdr, text="🧹  Santa's Cache Cleaner",
-                 font=('Arial', 14, 'bold'), bg='#161b22', fg='#58a6ff').pack()
-        lf = tk.Frame(win, bg='#0d1117')
+                 font=('Segoe UI Variable', 14, 'bold'), bg=BG1, fg=ACC).pack()
+        lf = tk.Frame(win, bg=BG0)
         lf.pack(fill='both', expand=True, padx=12, pady=8)
         sv = tk.StringVar(value="Scanning…")
         tv = tk.StringVar(value="Total: —")
-        tk.Label(win, textvariable=sv, font=('Arial', 9), bg='#0d1117', fg='#8b949e').pack()
-        tk.Label(win, textvariable=tv, font=('Arial', 12, 'bold'), bg='#0d1117', fg='#3fb950').pack(pady=3)
+        tk.Label(win, textvariable=sv, font=('Segoe UI Variable', 9), bg=BG0, fg=SUB).pack()
+        tk.Label(win, textvariable=tv, font=('Segoe UI Variable', 12, 'bold'), bg=BG0, fg=GRN).pack(pady=3)
         pg = ttk.Progressbar(win, mode='indeterminate')
         pg.pack(fill='x', padx=16, pady=4)
         pg.start()
-        bf = tk.Frame(win, bg='#0d1117')
+        bf = tk.Frame(win, bg=BG0)
         bf.pack(pady=8)
         cb_vars = {}
-        clean_btn = tk.Button(bf, text="🧹 Clean Selected",
-                              font=('Arial', 11, 'bold'), bg='#da3633', fg='white',
-                              relief='flat', padx=15, pady=7, state='disabled', cursor='hand2')
+        clean_btn = _styled_btn(bf, "🧹 Clean Selected", None, danger=True)
+        clean_btn.config(state='disabled')
         clean_btn.pack(side='left', padx=6)
-        tk.Button(bf, text="Close", command=win.destroy,
-                  font=('Arial', 11), bg='#30363d', fg='white',
-                  relief='flat', padx=15, pady=7, cursor='hand2').pack(side='left', padx=6)
+        _styled_btn(bf, "Close", win.destroy).pack(side='left', padx=6)
 
         def scan():
             locs = self._locations()
@@ -255,15 +264,15 @@ class CacheCleaner:
                 sz = self._size(path); total += sz
                 var = tk.BooleanVar(value=True)
                 cb_vars[path] = var
-                row = tk.Frame(lf, bg='#161b22', padx=8, pady=6)
+                row = tk.Frame(lf, bg=BG1, padx=10, pady=7)
                 row.pack(fill='x', pady=2)
-                tk.Checkbutton(row, variable=var, bg='#161b22',
-                               activebackground='#161b22', selectcolor='#21262d').pack(side='left')
-                tk.Label(row, text=name, font=('Arial', 10, 'bold'),
-                         bg='#161b22', fg='#e6edf3', width=22, anchor='w').pack(side='left')
-                color = '#f85149' if sz > 100*2**20 else '#d29922' if sz > 5*2**20 else '#3fb950'
-                tk.Label(row, text=self._fmt(sz), font=('Arial', 10),
-                         bg='#161b22', fg=color).pack(side='right', padx=8)
+                tk.Checkbutton(row, variable=var, bg=BG1,
+                               activebackground=BG1, selectcolor=BG2).pack(side='left')
+                tk.Label(row, text=name, font=('Segoe UI Variable', 10, 'bold'),
+                         bg=BG1, fg=FG, width=22, anchor='w').pack(side='left')
+                color = RED_C if sz > 100*2**20 else YEL if sz > 5*2**20 else GRN
+                tk.Label(row, text=self._fmt(sz), font=('Segoe UI Variable', 10),
+                         bg=BG1, fg=color).pack(side='right', padx=8)
             tv.set(f"Total found: {self._fmt(total)}")
             sv.set(f"{len(locs)} locations scanned")
             clean_btn.config(state='normal')
@@ -296,30 +305,23 @@ class WaterPopup:
         w.title("Hydration Reminder")
         cx = w.winfo_screenwidth()//2 - 170
         cy = w.winfo_screenheight()//2 - 120
-        w.geometry(f"340x240+{cx}+{cy}")
+        w.geometry(f"360x250+{cx}+{cy}")
         w.resizable(False, False)
         w.attributes('-topmost', True)
         w.configure(bg=BG0)
+        _apply_win11(w)
 
-        # ── header ──────────────────────────────────────────────
         hdr = tk.Frame(w, bg=BG1, pady=14)
         hdr.pack(fill='x')
-        tk.Label(hdr, text="💧", font=('Segoe UI Emoji', 40),
-                 bg=BG1).pack()
-        tk.Label(hdr, text="Time to Drink Water!", font=('Arial', 14, 'bold'),
-                 bg=BG1, fg=ACC).pack(pady=(2, 0))
+        tk.Label(hdr, text="💧", font=('Segoe UI Emoji', 40), bg=BG1).pack()
+        tk.Label(hdr, text="Time to Drink Water!",
+                 font=('Segoe UI Variable', 14, 'bold'), bg=BG1, fg=ACC).pack(pady=(2, 0))
 
-        # ── body ────────────────────────────────────────────────
         tk.Frame(w, height=1, bg=BOR).pack(fill='x')
         tk.Label(w, text="Santa says: Stay hydrated! 🥤",
-                 font=('Arial', 10), bg=BG0, fg=SUB).pack(pady=14)
+                 font=('Segoe UI Variable', 10), bg=BG0, fg=SUB).pack(pady=14)
 
-        # ── button ──────────────────────────────────────────────
-        btn = tk.Button(w, text="Thanks Santa! 🎅", command=w.destroy,
-                        bg='#1f6feb', fg=FG, font=('Arial', 11, 'bold'),
-                        relief='flat', padx=24, pady=8, cursor='hand2',
-                        activebackground='#388bfd', activeforeground=FG)
-        btn.pack(pady=10)
+        _styled_btn(w, "Thanks Santa! 🎅", w.destroy, accent=True).pack(pady=10)
         w.after(30000, lambda: w.destroy() if w.winfo_exists() else None)
 
 
@@ -534,9 +536,13 @@ class GiftDrop:
 # ─────────────────────────── SNOW OVERLAY ───────────────────
 
 class SnowOverlay:
-    """Fullscreen transparent click-through snow overlay."""
-    MAX_FLAKES = 120
-    TICK_MS    = 33   # ~30 fps
+    """Fullscreen 3D depth-based snow overlay — click-through on Windows."""
+    MAX_FLAKES = 160
+    TICK_MS    = 30   # ~33 fps
+
+    # depth colour: far=bluish-grey → close=white
+    _FAR_RGB  = (140, 148, 200)
+    _NEAR_RGB = (255, 255, 255)
 
     def __init__(self, parent):
         self._parent = parent
@@ -572,7 +578,6 @@ class SnowOverlay:
                                   bg='black', highlightthickness=0)
         self._canvas.pack()
 
-        # make click-through: WS_EX_LAYERED | WS_EX_TRANSPARENT
         self._win.update()
         try:
             import ctypes
@@ -582,7 +587,11 @@ class SnowOverlay:
         except Exception:
             pass
 
-        self._flakes = [self._new_flake(anywhere=True) for _ in range(self.MAX_FLAKES)]
+        # pre-build sorted by z so far flakes render under near ones
+        self._flakes = sorted(
+            [self._new_flake(anywhere=True) for _ in range(self.MAX_FLAKES)],
+            key=lambda f: f['z']
+        )
         self._tick()
 
     def stop(self):
@@ -592,48 +601,126 @@ class SnowOverlay:
         self._win = self._canvas = None
         self._flakes = []
 
+    # ── helpers ──────────────────────────────────────────────
     def _new_flake(self, anywhere=False):
+        z     = random.random()           # 0 = far, 1 = close
+        r_far, r_near = 1.2, 6.0
         return {
-            'x':     random.uniform(0, self._sw),
-            'y':     random.uniform(0, self._sh) if anywhere else random.uniform(-40, -2),
-            'r':     random.uniform(1.5, 4.5),
-            'speed': random.uniform(0.8, 2.6),
-            'drift': random.uniform(-0.5, 0.5),
-            'wobble': random.uniform(0, 6.28),
+            'x':      random.uniform(0, self._sw),
+            'y':      random.uniform(0, self._sh) if anywhere
+                      else random.uniform(-60, -2),
+            'z':      z,
+            'r':      r_far + z * (r_near - r_far),
+            'speed':  0.3 + z * 3.0,
+            'drift':  random.uniform(-0.4, 0.4) * (0.5 + z),
+            'wobble': random.uniform(0, math.tau),
+            'wspeed': random.uniform(0.018, 0.055),
+            'rot':    random.uniform(0, math.tau),
+            'rspeed': random.uniform(0.01, 0.04) * random.choice([-1, 1]),
+            'color':  self._depth_color(z),
         }
+
+    def _depth_color(self, z):
+        fr, fn = self._FAR_RGB, self._NEAR_RGB
+        r = int(fr[0] + z * (fn[0] - fr[0]))
+        g = int(fr[1] + z * (fn[1] - fr[1]))
+        b = int(fr[2] + z * (fn[2] - fr[2]))
+        return f'#{r:02x}{g:02x}{b:02x}'
+
+    def _draw_snowflake(self, cv, x, y, r, rot, color):
+        """6-arm snowflake polygon — used for mid/close flakes."""
+        pts = []
+        outer, inner = r, r * 0.38
+        for i in range(12):
+            angle = rot + math.pi / 6 * i
+            rad   = outer if i % 2 == 0 else inner
+            pts.extend([x + rad * math.cos(angle),
+                        y + rad * math.sin(angle)])
+        cv.create_polygon(pts, fill=color, outline='', tags='snow', smooth=False)
+        # cross lines for the largest flakes
+        if r >= 5:
+            arm = r * 1.15
+            for i in range(3):
+                a = rot + math.pi / 3 * i
+                cv.create_line(x + arm * math.cos(a), y + arm * math.sin(a),
+                               x - arm * math.cos(a), y - arm * math.sin(a),
+                               fill=color, width=max(1, int(r * 0.18)),
+                               tags='snow', capstyle='round')
 
     def _tick(self):
         if not self._active or not self._canvas:
             return
         cv = self._canvas
         cv.delete('snow')
+
         for f in self._flakes:
-            f['wobble'] += 0.04
-            f['y'] += f['speed']
-            f['x'] += f['drift'] + 0.4 * __import__('math').sin(f['wobble'])
-            if f['y'] > self._sh + 10:
+            f['wobble'] += f['wspeed']
+            f['rot']    += f['rspeed']
+            f['y']      += f['speed']
+            f['x']      += f['drift'] + math.sin(f['wobble']) * 0.55 * (0.4 + f['z'])
+
+            if f['y'] > self._sh + 12:
                 f.update(self._new_flake())
-            if f['x'] < -10:
-                f['x'] = self._sw + 5
-            elif f['x'] > self._sw + 10:
-                f['x'] = -5
-            x, y, r = f['x'], f['y'], f['r']
-            cv.create_oval(x - r, y - r, x + r, y + r,
-                           fill='white', outline='', tags='snow')
+            if   f['x'] < -12:         f['x'] = self._sw + 8
+            elif f['x'] > self._sw+12: f['x'] = -8
+
+            x, y, r, color = f['x'], f['y'], f['r'], f['color']
+
+            if r < 2.0:
+                # tiny dot — distant flake
+                cv.create_oval(x-r, y-r, x+r, y+r,
+                               fill=color, outline='', tags='snow')
+            elif r < 3.5:
+                # medium oval
+                cv.create_oval(x-r, y-r, x+r, y+r,
+                               fill=color, outline='', tags='snow')
+                # tiny highlight to give sparkle
+                h = r * 0.35
+                cv.create_oval(x-h, y-h, x+h, y+h,
+                               fill='white', outline='', tags='snow')
+            else:
+                # full snowflake shape
+                self._draw_snowflake(cv, x, y, r, f['rot'], color)
+
         self._win.after(self.TICK_MS, self._tick)
 
 
-# ─────────────────────────── FLOAT MENU ─────────────────────
+# ─────────────────────────── WIN11 STYLE HELPERS & PALETTE ──
 
-BG0 = '#0d1117'   # darkest
-BG1 = '#161b22'   # panel
-BG2 = '#21262d'   # hover
-BOR = '#30363d'   # border
-FG  = '#e6edf3'
-SUB = '#8b949e'
-ACC = '#58a6ff'
-GRN = '#3fb950'
-RED_C = '#f85149'
+def _apply_win11(win, style='mica'):
+    """Apply Windows 11 Mica/Acrylic effect + dark title bar."""
+    if _HAS_PYWINSTYLES:
+        try:
+            pywinstyles.apply_style(win, style)
+        except Exception:
+            pass
+
+def _styled_btn(parent, text, command, danger=False, accent=False, **kw):
+    """Win11-style flat button."""
+    if accent:
+        bg, fg, hbg = ACC, '#ffffff', '#1a8ee8'
+    elif danger:
+        bg, fg, hbg = RED_C, '#ffffff', '#e03030'
+    else:
+        bg, fg, hbg = BG2, FG, '#484848'
+    btn = tk.Button(parent, text=text, command=command,
+                    bg=bg, fg=fg, font=('Segoe UI Variable', 10),
+                    relief='flat', activebackground=hbg, activeforeground=fg,
+                    cursor='hand2', padx=16, pady=6, **kw)
+    return btn
+
+
+# Windows 11 Fluent dark palette
+BG0   = '#202020'   # app background
+BG1   = '#2d2d2d'   # card / panel
+BG2   = '#3a3a3a'   # hover
+BOR   = '#3d3d3d'   # border
+FG    = '#ffffff'
+SUB   = '#9d9d9d'
+ACC   = '#0078D4'   # Windows blue
+GRN   = '#107c10'   # Windows green
+RED_C = '#c42b1c'   # Windows red
+YEL   = '#c19c00'   # Windows yellow
 
 
 class FloatMenu:
@@ -654,7 +741,11 @@ class FloatMenu:
         win = tk.Toplevel(self._parent)
         win.overrideredirect(True)
         win.attributes('-topmost', True)
+        win.configure(bg=BG1)
         self._win = win
+
+        # Win11 acrylic on menu
+        _apply_win11(win, 'acrylic')
 
         # border via outer frame
         outer = tk.Frame(win, bg=BOR, padx=1, pady=1)
@@ -703,13 +794,13 @@ class FloatMenu:
         tf = tk.Frame(row, bg=BG1)
         tf.pack(side='left', fill='x', expand=True, padx=(0, 14))
 
-        tl = tk.Label(tf, text=title, font=('Arial', 10),
+        tl = tk.Label(tf, text=title, font=('Segoe UI Variable', 10),
                       bg=BG1, fg=fg_col, anchor='w')
         tl.pack(fill='x', pady=(5 if sub else 6, 0))
 
         sl = None
         if sub:
-            sl = tk.Label(tf, text=sub, font=('Arial', 8),
+            sl = tk.Label(tf, text=sub, font=('Segoe UI Variable', 8),
                           bg=BG1, fg=SUB, anchor='w')
             sl.pack(fill='x', pady=(0, 5))
 
@@ -1010,39 +1101,39 @@ class SantaPetApp:
     def _settings(self):
         win = tk.Toplevel(self.root)
         win.title("Settings")
-        win.geometry("320x280+{}+{}".format(
-            self.sw//2-160, self.sh//2-140))
+        win.geometry("340x300+{}+{}".format(
+            self.sw//2-170, self.sh//2-150))
         win.resizable(False, False)
         win.attributes('-topmost', True)
         win.configure(bg=BG0)
+        _apply_win11(win)
 
-        # ── header ──────────────────────────────────────────────
-        hdr = tk.Frame(win, bg=BG1, pady=10)
+        hdr = tk.Frame(win, bg=BG1, pady=12)
         hdr.pack(fill='x')
-        tk.Label(hdr, text="⚙️  Settings", font=('Arial', 14, 'bold'),
-                 bg=BG1, fg=ACC).pack()
+        tk.Label(hdr, text="⚙️  Settings",
+                 font=('Segoe UI Variable', 14, 'bold'), bg=BG1, fg=ACC).pack()
         tk.Label(hdr, text="Speed & reminder preferences",
-                 font=('Arial', 9), bg=BG1, fg=SUB).pack(pady=(2,0))
+                 font=('Segoe UI Variable', 9), bg=BG1, fg=SUB).pack(pady=(2, 0))
         tk.Frame(win, height=1, bg=BOR).pack(fill='x')
 
-        body = tk.Frame(win, bg=BG0, padx=20)
+        body = tk.Frame(win, bg=BG0, padx=22)
         body.pack(fill='both', expand=True)
 
         def lbl(t):
             tk.Label(body, text=t, bg=BG0, fg=FG,
-                     font=('Arial', 10)).pack(anchor='w', pady=(12, 0))
+                     font=('Segoe UI Variable', 10)).pack(anchor='w', pady=(14, 0))
 
         lbl("🚶 Walking Speed  (1 = slow · 8 = fast)")
         spd = tk.IntVar(value=self.speed)
         tk.Scale(body, from_=1, to=8, orient='horizontal', variable=spd,
-                 bg=BG0, fg=FG, troughcolor=BG2,
-                 highlightthickness=0, length=260).pack(fill='x')
+                 bg=BG0, fg=FG, troughcolor=BOR, activebackground=ACC,
+                 highlightthickness=0, length=280, sliderlength=18).pack(fill='x')
 
         lbl("💧 Water Reminder (minutes)")
         wtr = tk.IntVar(value=self._water_mins)
         tk.Scale(body, from_=5, to=120, orient='horizontal', variable=wtr,
-                 bg=BG0, fg=FG, troughcolor=BG2,
-                 highlightthickness=0, length=260).pack(fill='x')
+                 bg=BG0, fg=FG, troughcolor=BOR, activebackground=ACC,
+                 highlightthickness=0, length=280, sliderlength=18).pack(fill='x')
 
         def apply():
             self.speed       = spd.get()
@@ -1051,10 +1142,7 @@ class SantaPetApp:
             self._say("Settings saved ✅", 2000)
 
         tk.Frame(win, height=1, bg=BOR).pack(fill='x')
-        tk.Button(win, text="Save Settings", command=apply,
-                  bg=GRN, fg='white', font=('Arial', 11, 'bold'),
-                  relief='flat', padx=24, pady=8, cursor='hand2',
-                  activebackground='#56d364', activeforeground='white').pack(pady=14)
+        _styled_btn(win, "Save Settings", apply, accent=True).pack(pady=14)
 
     # ── task reminder callback ────────────────────────────────
     def _task_remind(self, task):
@@ -1064,28 +1152,27 @@ class SantaPetApp:
     def _show_task_popup(self, task):
         w = tk.Toplevel(self.root)
         w.title("Task Reminder")
-        w.geometry("340x220+{}+{}".format(self.sw//2-170, self.sh//2-110))
+        w.geometry("360x230+{}+{}".format(self.sw//2-180, self.sh//2-115))
         w.resizable(False, False)
         w.attributes('-topmost', True)
         w.configure(bg=BG0)
+        _apply_win11(w)
 
         hdr = tk.Frame(w, bg=BG1, pady=12)
         hdr.pack(fill='x')
         tk.Label(hdr, text="⏰", font=('Segoe UI Emoji', 32), bg=BG1).pack()
-        tk.Label(hdr, text="Task Reminder", font=('Arial', 12, 'bold'),
-                 bg=BG1, fg=ACC).pack(pady=(2,0))
+        tk.Label(hdr, text="Task Reminder",
+                 font=('Segoe UI Variable', 12, 'bold'), bg=BG1, fg=ACC).pack(pady=(2, 0))
 
         tk.Frame(w, height=1, bg=BOR).pack(fill='x')
-        tk.Label(w, text=task['title'], font=('Arial', 13, 'bold'),
-                 bg=BG0, fg=FG, wraplength=300).pack(pady=(12,2))
+        tk.Label(w, text=task['title'],
+                 font=('Segoe UI Variable', 13, 'bold'),
+                 bg=BG0, fg=FG, wraplength=320).pack(pady=(12, 2))
         if task.get('note'):
-            tk.Label(w, text=task['note'], font=('Arial', 9),
-                     bg=BG0, fg=SUB).pack(pady=2)
+            tk.Label(w, text=task['note'],
+                     font=('Segoe UI Variable', 9), bg=BG0, fg=SUB).pack(pady=2)
 
-        tk.Button(w, text="Got it! ✅", command=w.destroy,
-                  bg=GRN, fg='white', font=('Arial', 11, 'bold'),
-                  relief='flat', padx=20, pady=7, cursor='hand2',
-                  activebackground='#56d364', activeforeground='white').pack(pady=14)
+        _styled_btn(w, "Got it! ✅", w.destroy, accent=True).pack(pady=14)
         w.after(60000, lambda: w.destroy() if w.winfo_exists() else None)
 
     def _quit(self):
@@ -1093,6 +1180,8 @@ class SantaPetApp:
             self.root.destroy()
 
     def run(self):
+        if _HAS_SVTTK:
+            sv_ttk.set_theme('dark')
         self.root.mainloop()
 
 
