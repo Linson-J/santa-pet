@@ -325,6 +325,37 @@ class WaterPopup:
         w.after(30000, lambda: w.destroy() if w.winfo_exists() else None)
 
 
+# ─── shared overlay helper ───────────────────────────────────
+_CHROMA = '#010101'   # near-black colour key — used as transparent bg
+
+def _make_overlay(parent, w, h, x, y):
+    """Create a borderless topmost overlay window with transparent bg."""
+    win = tk.Toplevel(parent)
+    win.overrideredirect(True)
+    win.attributes('-topmost', True)
+    win.configure(bg=_CHROMA)
+    win.geometry(f"{w}x{h}+{x}+{y}")
+    return win
+
+def _apply_chroma(win):
+    """Apply chroma-key transparency + click-through via Win32 API."""
+    win.update()
+    try:
+        import ctypes
+        GWL_EXSTYLE      = -20
+        WS_EX_LAYERED    = 0x00080000
+        WS_EX_TRANSPARENT = 0x00000020
+        LWA_COLORKEY     = 0x00000001
+        hwnd = win.winfo_id()
+        ex   = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        ctypes.windll.user32.SetWindowLongW(
+            hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+        ctypes.windll.user32.SetLayeredWindowAttributes(
+            hwnd, 0x010101, 0, LWA_COLORKEY)
+    except Exception:
+        win.attributes('-transparentcolor', _CHROMA)
+
+
 # ─────────────────────────── EXTRA COMPANIONS ────────────────
 
 class SleighFlyby:
@@ -335,28 +366,11 @@ class SleighFlyby:
     def fly(self):
         sw = self._parent.winfo_screenwidth()
         sh = self._parent.winfo_screenheight()
-        # start off-left, fly to off-right at y ~ 1/5 screen height
-        y = sh // 5
-        win = tk.Toplevel(self._parent)
-        win.overrideredirect(True)
-        win.attributes('-topmost', True)
-        win.attributes('-transparentcolor', 'black')
-        win.configure(bg='black')
-        win.geometry(f"120x60+{-130}+{y}")
-
-        lbl = tk.Label(win, text='🛷🦌', font=('Segoe UI Emoji', 30),
-                       bg='black', fg='white')
-        lbl.pack()
-
-        win.update()
-        try:
-            import ctypes
-            hwnd = win.winfo_id()
-            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
-            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
-        except Exception:
-            pass
-
+        y  = sh // 5
+        win = _make_overlay(self._parent, 120, 60, -130, y)
+        tk.Label(win, text='🛷🦌', font=('Segoe UI Emoji', 30),
+                 bg=_CHROMA).pack()
+        _apply_chroma(win)
         self._move(win, -130, y, sw + 140, step=14)
 
     def _move(self, win, x, y, end_x, step):
@@ -378,26 +392,10 @@ class ReindeerDash:
         sw = self._parent.winfo_screenwidth()
         sh = self._parent.winfo_screenheight()
         y  = sh - 130
-        win = tk.Toplevel(self._parent)
-        win.overrideredirect(True)
-        win.attributes('-topmost', True)
-        win.attributes('-transparentcolor', 'black')
-        win.configure(bg='black')
-        win.geometry(f"80x60+{-90}+{y}")
-
-        lbl = tk.Label(win, text='🦌', font=('Segoe UI Emoji', 38),
-                       bg='black', fg='white')
-        lbl.pack()
-
-        win.update()
-        try:
-            import ctypes
-            hwnd = win.winfo_id()
-            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
-            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
-        except Exception:
-            pass
-
+        win = _make_overlay(self._parent, 80, 60, -90, y)
+        tk.Label(win, text='🦌', font=('Segoe UI Emoji', 38),
+                 bg=_CHROMA).pack()
+        _apply_chroma(win)
         self._move(win, -90, y, sw + 100, step=18)
 
     def _move(self, win, x, y, end_x, step):
@@ -436,31 +434,17 @@ class ChristmasTree:
         x  = sw - 120
         y  = sh - 200
 
-        win = tk.Toplevel(self._parent)
-        win.overrideredirect(True)
-        win.attributes('-topmost', True)
-        win.attributes('-transparentcolor', 'black')
-        win.configure(bg='black')
-        win.geometry(f"100x160+{x}+{y}")
+        win = _make_overlay(self._parent, 100, 160, x, y)
         self._win = win
 
         self._lbl = tk.Label(win, text='🎄', font=('Segoe UI Emoji', 72),
-                              bg='black', fg='white')
+                              bg=_CHROMA)
         self._lbl.pack()
-
         self._star = tk.Label(win, text='⭐', font=('Segoe UI Emoji', 18),
-                               bg='black', fg='white')
+                               bg=_CHROMA)
         self._star.place(x=38, y=0)
 
-        win.update()
-        try:
-            import ctypes
-            hwnd = win.winfo_id()
-            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
-            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
-        except Exception:
-            pass
-
+        _apply_chroma(win)
         self._twinkle()
 
     def remove(self):
@@ -489,31 +473,12 @@ class GiftDrop:
         self._parent = parent
 
     def drop(self, sx, sy):
-        """Drop a gift at screen coordinates (sx, sy)."""
-        gift = random.choice(self.GIFTS)
-        win = tk.Toplevel(self._parent)
-        win.overrideredirect(True)
-        win.attributes('-topmost', True)
-        win.attributes('-transparentcolor', 'black')
-        win.configure(bg='black')
         cx = int(sx) - 18
         cy = int(sy) - 18
-        win.geometry(f"36x36+{cx}+{cy}")
-
-        lbl = tk.Label(win, text=gift, font=('Segoe UI Emoji', 22),
-                       bg='black', fg='white')
-        lbl.pack()
-
-        # make click-through
-        win.update()
-        try:
-            import ctypes
-            hwnd = win.winfo_id()
-            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
-            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
-        except Exception:
-            pass
-
+        win = _make_overlay(self._parent, 36, 36, cx, cy)
+        tk.Label(win, text=random.choice(self.GIFTS),
+                 font=('Segoe UI Emoji', 22), bg=_CHROMA).pack()
+        _apply_chroma(win)
         self._float_up(win, cy, self.FADE_STEPS)
 
     def _float_up(self, win, y, steps):
@@ -566,26 +531,14 @@ class SnowOverlay:
         self._sw = self._parent.winfo_screenwidth()
         self._sh = self._parent.winfo_screenheight()
 
-        self._win = tk.Toplevel(self._parent)
-        self._win.overrideredirect(True)
-        self._win.attributes('-topmost', True)
-        self._win.attributes('-transparentcolor', 'black')
-        self._win.geometry(f"{self._sw}x{self._sh}+0+0")
-        self._win.configure(bg='black')
+        self._win = _make_overlay(self._parent, self._sw, self._sh, 0, 0)
         self._win.protocol('WM_DELETE_WINDOW', lambda: None)
 
         self._canvas = tk.Canvas(self._win, width=self._sw, height=self._sh,
-                                  bg='black', highlightthickness=0)
+                                  bg=_CHROMA, highlightthickness=0)
         self._canvas.pack()
 
-        self._win.update()
-        try:
-            import ctypes
-            hwnd = self._win.winfo_id()
-            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
-            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
-        except Exception:
-            pass
+        _apply_chroma(self._win)
 
         # pre-build sorted by z so far flakes render under near ones
         self._flakes = sorted(
