@@ -20,7 +20,7 @@ except ImportError:
     _HAS_PYWINSTYLES = False
 
 TR = (0, 0, 0, 0)
-W, H, CX = 126, 186, 63
+W, H, CX = 200, 300, 100
 
 _ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
 
@@ -35,11 +35,14 @@ def _load_anim(folder, flip=False):
     frames = []
     for fp in files:
         sprite = Image.open(fp).convert('RGBA')
-        sw, sh = sprite.size
-        frame = Image.new('RGBA', (W, H), TR)
-        x = (W - sw) // 2
-        y = H - sh - 2
-        frame.paste(sprite, (x, y), sprite)
+        if sprite.size == (W, H):
+            frame = sprite
+        else:
+            sw, sh = sprite.size
+            frame = Image.new('RGBA', (W, H), TR)
+            x = (W - sw) // 2
+            y = H - sh
+            frame.paste(sprite, (x, y), sprite)
         if flip:
             frame = frame.transpose(Image.FLIP_LEFT_RIGHT)
         frames.append(frame)
@@ -48,43 +51,28 @@ def _load_anim(folder, flip=False):
 
 def _build_anims():
     walk_r = _load_anim('walk')
-    walk_l = _load_anim('walk', flip=True)
+    walk_l = _load_anim('walk_l')   # pre-flipped folder
     idle   = _load_anim('idle')
     shimmy = _load_anim('jump')
     wave   = _load_anim('slide')
     groove = _load_anim('run')
 
-    base = idle[0] if idle else Image.new('RGBA', (W, H), TR)
-    spin_widths = [W, 96, 65, 30, 10, 30, 65, 96]
-    spin_frames = []
-    for sw in spin_widths:
-        if sw == W:
-            spin_frames.append(base.copy())
-        else:
-            sq = base.resize((sw, H), Image.LANCZOS)
-            frame = Image.new('RGBA', (W, H), TR)
-            frame.paste(sq, ((W - sw) // 2, 0))
-            spin_frames.append(frame)
-
     return {
-        'walk_r':       walk_r,
-        'walk_l':       walk_l,
-        'idle':         idle,
-        'shimmy':       shimmy,
-        'wave':         wave,
-        'groove':       groove,
-        '_spin_frames': spin_frames,
+        'walk_r': walk_r,
+        'walk_l': walk_l,
+        'idle':   idle,
+        'shimmy': shimmy,
+        'wave':   wave,
+        'groove': groove,
     }
 
 
 ANIM = _build_anims()
-SPIN_FRAMES = ANIM.pop('_spin_frames')
 
-DANCE_NAMES  = ['shimmy', 'wave', 'spin', 'groove']
+DANCE_NAMES  = ['shimmy', 'wave', 'groove']
 DANCE_QUIPS  = {
     'shimmy': ["🕺 Shimmy!", "Santa shuffle!", "Ho Ho Shake!"],
     'wave':   ["👋 Ho Ho Ho!", "Waving! 🎄", "Hello! 🎅"],
-    'spin':   ["🌀 Wheee!", "Round & round!", "Spinning! ⭐"],
     'groove': ["🎵 Feeling it!", "Jingle boogie! 🔔", "Groovin'! 🎶"],
 }
 
@@ -338,22 +326,24 @@ def _make_overlay(parent, w, h, x, y):
     return win
 
 def _apply_chroma(win):
-    """Apply chroma-key transparency + click-through via Win32 API."""
+    """Apply chroma-key transparency + click-through to an overlay window."""
     win.update()
+    # Visual transparency: tkinter's attribute calls SetLayeredWindowAttributes
+    # on the correct TkTopLevel HWND (winfo_id returns TkChild which is wrong for Win32 direct calls)
+    win.attributes('-transparentcolor', _CHROMA)
+    win.update()
+    # Click-through: WS_EX_TRANSPARENT on the parent (TkTopLevel) HWND
     try:
         import ctypes
-        GWL_EXSTYLE      = -20
-        WS_EX_LAYERED    = 0x00080000
+        GWL_EXSTYLE       = -20
         WS_EX_TRANSPARENT = 0x00000020
-        LWA_COLORKEY     = 0x00000001
-        hwnd = win.winfo_id()
-        ex   = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        ctypes.windll.user32.SetWindowLongW(
-            hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED | WS_EX_TRANSPARENT)
-        ctypes.windll.user32.SetLayeredWindowAttributes(
-            hwnd, 0x010101, 0, LWA_COLORKEY)
+        child_hwnd  = win.winfo_id()
+        parent_hwnd = ctypes.windll.user32.GetParent(child_hwnd)
+        for hwnd in ([parent_hwnd] if parent_hwnd else []) + [child_hwnd]:
+            ex = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT)
     except Exception:
-        win.attributes('-transparentcolor', _CHROMA)
+        pass
 
 
 # ─────────────────────────── EXTRA COMPANIONS ────────────────
@@ -362,61 +352,100 @@ class SleighFlyby:
     """Santa's sleigh flies across the screen once and disappears."""
     def __init__(self, parent):
         self._parent = parent
+        self._active = False
 
     def fly(self):
+        if self._active:
+            return
+        self._active = True
         sw = self._parent.winfo_screenwidth()
         sh = self._parent.winfo_screenheight()
         y  = sh // 5
-        win = _make_overlay(self._parent, 120, 60, -130, y)
-        tk.Label(win, text='🛷🦌', font=('Segoe UI Emoji', 30),
-                 bg=_CHROMA).pack()
+        win = _make_overlay(self._parent, 160, 80, -170, y)
+        tk.Label(win, text='🛷🦌', font=('Segoe UI Emoji', 44),
+                 bg=_CHROMA).pack(pady=4)
         _apply_chroma(win)
-        self._move(win, -130, y, sw + 140, step=14)
+        self._move(win, -170, y, sw + 180, step=16)
 
     def _move(self, win, x, y, end_x, step):
         if not win.winfo_exists():
+            self._active = False
             return
         if x > end_x:
             win.destroy()
+            self._active = False
             return
-        win.geometry(f"120x60+{x}+{y}")
-        win.after(25, lambda: self._move(win, x + step, y, end_x, step))
+        win.geometry(f"160x80+{x}+{y}")
+        win.after(22, lambda: self._move(win, x + step, y, end_x, step))
 
 
 class ReindeerDash:
-    """A reindeer runs in a straight horizontal line across the screen."""
+    """A reindeer runs across the screen using an animated PIL sprite."""
+    RW, RH   = 200, 120
+    STEP     = 16    # px per tick
+    TICK_MS  = 18    # ms per tick
+
     def __init__(self, parent):
         self._parent = parent
+        self._frames = []
+        d     = os.path.join(_ASSETS, 'reindeer')
+        files = sorted(glob.glob(os.path.join(d, '*.png')),
+                       key=lambda p: int(os.path.splitext(os.path.basename(p))[0]))
+        for fp in files:
+            self._frames.append(ImageTk.PhotoImage(Image.open(fp).convert('RGBA')))
 
     def dash(self):
+        if not self._frames or getattr(self, '_active', False):
+            return
+        self._active = True
         sw = self._parent.winfo_screenwidth()
         sh = self._parent.winfo_screenheight()
-        y  = sh - 130
-        win = _make_overlay(self._parent, 80, 60, -90, y)
-        tk.Label(win, text='🦌', font=('Segoe UI Emoji', 38),
-                 bg=_CHROMA).pack()
+        y  = sh - self.RH - 55
+        win = _make_overlay(self._parent, self.RW, self.RH, -self.RW - 10, y)
+        cv  = tk.Canvas(win, width=self.RW, height=self.RH,
+                         bg=_CHROMA, highlightthickness=0)
+        cv.pack()
+        img_id = cv.create_image(0, 0, anchor='nw', image=self._frames[0])
         _apply_chroma(win)
-        self._move(win, -90, y, sw + 100, step=18)
+        self._move(win, cv, img_id, -self.RW - 10, y, sw + self.RW + 20, 0, 0)
 
-    def _move(self, win, x, y, end_x, step):
+    def _move(self, win, cv, img_id, x, y, end_x, fi, tick):
         if not win.winfo_exists():
+            self._active = False
             return
         if x > end_x:
             win.destroy()
+            self._active = False
             return
-        win.geometry(f"80x60+{x}+{y}")
-        win.after(20, lambda: self._move(win, x + step, y, end_x, step))
+        win.geometry(f"{self.RW}x{self.RH}+{x}+{y}")
+        if tick % 5 == 0:
+            fi = (fi + 1) % len(self._frames)
+            cv.itemconfig(img_id, image=self._frames[fi])
+        win.after(self.TICK_MS,
+                  lambda: self._move(win, cv, img_id, x + self.STEP, y, end_x, fi, tick+1))
 
 
 class ChristmasTree:
-    """A stationary Christmas tree that twinkles on screen."""
-    LIGHTS = ['🎄', '✨', '⭐', '🎄', '🌟', '🎄', '✨']
+    """A stationary Christmas tree using a real rendered PNG image."""
+
+    _STAR_CX = 140   # star x within the 280×400 image
+    _STAR_CY = 26    # star y within the 280×400 image
 
     def __init__(self, parent):
-        self._parent = parent
-        self._win    = None
-        self._active = False
-        self._tick_i = 0
+        self._parent  = parent
+        self._win     = None
+        self._canvas  = None
+        self._active  = False
+        self._tk_img  = None
+        self._glow_id = None
+
+        tree_path = os.path.join(_ASSETS, 'christmas_tree.png')
+        if os.path.exists(tree_path):
+            self._pil   = Image.open(tree_path).convert('RGBA')
+            self._tw, self._th = self._pil.size
+        else:
+            self._pil   = None
+            self._tw, self._th = 120, 180
 
     @property
     def active(self):
@@ -431,18 +460,18 @@ class ChristmasTree:
         self._active = True
         sw = self._parent.winfo_screenwidth()
         sh = self._parent.winfo_screenheight()
-        x  = sw - 120
-        y  = sh - 200
+        x  = sw - self._tw - 8
+        y  = sh - self._th - 45   # above taskbar
 
-        win = _make_overlay(self._parent, 100, 160, x, y)
-        self._win = win
+        win = _make_overlay(self._parent, self._tw, self._th, x, y)
+        self._win    = win
+        self._canvas = tk.Canvas(win, width=self._tw, height=self._th,
+                                  bg=_CHROMA, highlightthickness=0)
+        self._canvas.pack()
 
-        self._lbl = tk.Label(win, text='🎄', font=('Segoe UI Emoji', 72),
-                              bg=_CHROMA)
-        self._lbl.pack()
-        self._star = tk.Label(win, text='⭐', font=('Segoe UI Emoji', 18),
-                               bg=_CHROMA)
-        self._star.place(x=38, y=0)
+        if self._pil:
+            self._tk_img = ImageTk.PhotoImage(self._pil)
+            self._canvas.create_image(0, 0, anchor='nw', image=self._tk_img)
 
         _apply_chroma(win)
         self._twinkle()
@@ -451,14 +480,22 @@ class ChristmasTree:
         self._active = False
         if self._win and self._win.winfo_exists():
             self._win.destroy()
-        self._win = None
+        self._win = self._canvas = self._glow_id = None
 
     def _twinkle(self):
-        if not self._active or not self._win or not self._win.winfo_exists():
+        if not self._active or not self._canvas or not self._win.winfo_exists():
             return
-        stars = ['⭐', '🌟', '✨']
-        self._star.config(text=random.choice(stars))
-        self._win.after(random.randint(400, 1200), self._twinkle)
+        if self._glow_id:
+            self._canvas.delete(self._glow_id)
+        # draw an animated glowing aura around the star
+        r   = random.randint(10, 18)
+        col = random.choice(['#ffe066', '#fff4a0', '#ffd700', '#fffbe0'])
+        self._glow_id = self._canvas.create_oval(
+            self._STAR_CX - r, self._STAR_CY - r,
+            self._STAR_CX + r, self._STAR_CY + r,
+            outline=col, width=2, fill='')
+        self._canvas.tag_raise(self._glow_id)
+        self._win.after(random.randint(300, 900), self._twinkle)
 
 
 # ─────────────────────────── GIFT DROP ──────────────────────
@@ -501,21 +538,20 @@ class GiftDrop:
 # ─────────────────────────── SNOW OVERLAY ───────────────────
 
 class SnowOverlay:
-    """Fullscreen 3D depth-based snow overlay — click-through on Windows."""
-    MAX_FLAKES = 160
-    TICK_MS    = 30   # ~33 fps
-
-    # depth colour: far=bluish-grey → close=white
-    _FAR_RGB  = (140, 148, 200)
-    _NEAR_RGB = (255, 255, 255)
+    """Fullscreen 3D snow overlay with PIL-rendered crystal sprites."""
+    MAX_FLAKES = 120
+    TICK_MS    = 30
+    N_SIZES    = 8    # discrete depth buckets
+    N_ROTS     = 6    # rotation variants (0°–50°, hex-symmetry means 60° repeats)
 
     def __init__(self, parent):
-        self._parent = parent
-        self._win    = None
-        self._canvas = None
-        self._flakes = []
-        self._active = False
+        self._parent  = parent
+        self._win     = None
+        self._canvas  = None
+        self._flakes  = []
+        self._active  = False
         self._sw = self._sh = 0
+        self._sprites = {}   # (size_idx, rot_idx) -> ImageTk.PhotoImage
 
     @property
     def active(self):
@@ -524,6 +560,78 @@ class SnowOverlay:
     def toggle(self):
         self.stop() if self._active else self.start()
 
+    # ── sprite generation ────────────────────────────────────
+    def _build_sprites(self):
+        """Pre-render crystalline snowflake sprites at all sizes × rotations."""
+        from PIL import Image as PILImage, ImageDraw as PILDraw, ImageFilter as PILFilter
+        sprites = {}
+        for si in range(self.N_SIZES):
+            z      = si / max(self.N_SIZES - 1, 1)   # 0=far 1=near
+            radius = 2.5 + z * 13.5                   # 2.5 → 16 px
+            # colour: cool ice-blue for far, bright white for near
+            cr = int(160 + z * 95)
+            cg = int(185 + z * 70)
+            cb = 255
+            alpha = int(70 + z * 185)
+
+            for ri in range(self.N_ROTS):
+                base_ang = math.pi / self.N_ROTS * ri
+                pad  = max(6, int(radius * 0.4))
+                size = int(radius * 2) * 2 + pad * 2 + 4
+                img  = PILImage.new('RGBA', (size, size), (0, 0, 0, 0))
+                draw = PILDraw.Draw(img)
+                cx = cy = size // 2
+                col  = (cr, cg, cb, alpha)
+                lw   = max(1, int(radius * 0.14))
+
+                for arm in range(6):
+                    ang = base_ang + math.pi / 3 * arm
+                    ex  = cx + radius * math.cos(ang)
+                    ey  = cy + radius * math.sin(ang)
+                    draw.line([(cx, cy), (ex, ey)], fill=col, width=lw)
+                    # two pairs of side branches per arm
+                    if radius >= 5:
+                        for frac, blen in [(0.38, 0.30), (0.68, 0.22)]:
+                            bx = cx + radius * frac * math.cos(ang)
+                            by = cy + radius * frac * math.sin(ang)
+                            bl = radius * blen
+                            for side in (-1, 1):
+                                ba = ang + side * math.pi / 3
+                                draw.line(
+                                    [(int(bx), int(by)),
+                                     (int(bx + bl * math.cos(ba)),
+                                      int(by + bl * math.sin(ba)))],
+                                    fill=col, width=max(1, lw - 1)
+                                )
+                        # tiny tip cap
+                        tip_col = (255, 255, 255, min(255, alpha + 40))
+                        draw.ellipse([ex-2, ey-2, ex+2, ey+2], fill=tip_col)
+
+                # centre hex dot
+                cc = max(2, int(radius * 0.18))
+                draw.ellipse([cx-cc, cy-cc, cx+cc, cy+cc],
+                             fill=(255, 255, 255, min(255, alpha + 60)))
+
+                # soft glow halo on closer flakes
+                if z > 0.5:
+                    glow_alpha = int(alpha * 0.45)
+                    glow_img   = PILImage.new('RGBA', (size, size), (0, 0, 0, 0))
+                    gdraw      = PILDraw.Draw(glow_img)
+                    gcol       = (cr, cg, cb, glow_alpha)
+                    for arm in range(6):
+                        ang = base_ang + math.pi / 3 * arm
+                        gx  = cx + radius * 1.05 * math.cos(ang)
+                        gy  = cy + radius * 1.05 * math.sin(ang)
+                        gdraw.line([(cx, cy), (int(gx), int(gy))],
+                                   fill=gcol, width=lw + 3)
+                    glow_blur  = glow_img.filter(PILFilter.GaussianBlur(radius=3))
+                    composed   = PILImage.alpha_composite(glow_blur, img)
+                    img        = composed
+
+                sprites[(si, ri)] = ImageTk.PhotoImage(img)
+        return sprites
+
+    # ── lifecycle ─────────────────────────────────────────────
     def start(self):
         if self._active:
             return
@@ -531,16 +639,20 @@ class SnowOverlay:
         self._sw = self._parent.winfo_screenwidth()
         self._sh = self._parent.winfo_screenheight()
 
-        self._win = _make_overlay(self._parent, self._sw, self._sh, 0, 0)
-        self._win.protocol('WM_DELETE_WINDOW', lambda: None)
+        # Build sprites first (this may take ~0.3 s; do it before showing window)
+        self._sprites = self._build_sprites()
 
+        # Create window OFF-SCREEN so transparency is applied invisibly (no black flash)
+        self._win = _make_overlay(self._parent, self._sw, self._sh,
+                                   -self._sw - 10, 0)
+        self._win.protocol('WM_DELETE_WINDOW', lambda: None)
         self._canvas = tk.Canvas(self._win, width=self._sw, height=self._sh,
                                   bg=_CHROMA, highlightthickness=0)
         self._canvas.pack()
+        _apply_chroma(self._win)                          # transparency while off-screen
+        self._win.geometry(f"{self._sw}x{self._sh}+0+0") # slide on-screen — already transparent
+        self._win.update()
 
-        _apply_chroma(self._win)
-
-        # pre-build sorted by z so far flakes render under near ones
         self._flakes = sorted(
             [self._new_flake(anywhere=True) for _ in range(self.MAX_FLAKES)],
             key=lambda f: f['z']
@@ -553,52 +665,24 @@ class SnowOverlay:
             self._win.destroy()
         self._win = self._canvas = None
         self._flakes = []
+        self._sprites = {}
 
-    # ── helpers ──────────────────────────────────────────────
+    # ── helpers ───────────────────────────────────────────────
     def _new_flake(self, anywhere=False):
-        z     = random.random()           # 0 = far, 1 = close
-        r_far, r_near = 1.2, 6.0
+        z = random.random()
         return {
-            'x':      random.uniform(0, self._sw),
-            'y':      random.uniform(0, self._sh) if anywhere
-                      else random.uniform(-60, -2),
-            'z':      z,
-            'r':      r_far + z * (r_near - r_far),
-            'speed':  0.3 + z * 3.0,
-            'drift':  random.uniform(-0.4, 0.4) * (0.5 + z),
-            'wobble': random.uniform(0, math.tau),
-            'wspeed': random.uniform(0.018, 0.055),
-            'rot':    random.uniform(0, math.tau),
-            'rspeed': random.uniform(0.01, 0.04) * random.choice([-1, 1]),
-            'color':  self._depth_color(z),
+            'x':       random.uniform(0, self._sw),
+            'y':       random.uniform(0, self._sh) if anywhere
+                       else random.uniform(-80, -4),
+            'z':       z,
+            'speed':   0.4 + z * 2.8,
+            'drift':   random.uniform(-0.5, 0.5) * (0.4 + z),
+            'wobble':  random.uniform(0, math.tau),
+            'wspeed':  random.uniform(0.015, 0.05),
+            'si':      min(int(z * self.N_SIZES), self.N_SIZES - 1),
+            'ri':      random.randrange(self.N_ROTS),
+            'rspeed':  random.choice([-1, 1]) * random.uniform(0.003, 0.012),
         }
-
-    def _depth_color(self, z):
-        fr, fn = self._FAR_RGB, self._NEAR_RGB
-        r = int(fr[0] + z * (fn[0] - fr[0]))
-        g = int(fr[1] + z * (fn[1] - fr[1]))
-        b = int(fr[2] + z * (fn[2] - fr[2]))
-        return f'#{r:02x}{g:02x}{b:02x}'
-
-    def _draw_snowflake(self, cv, x, y, r, rot, color):
-        """6-arm snowflake polygon — used for mid/close flakes."""
-        pts = []
-        outer, inner = r, r * 0.38
-        for i in range(12):
-            angle = rot + math.pi / 6 * i
-            rad   = outer if i % 2 == 0 else inner
-            pts.extend([x + rad * math.cos(angle),
-                        y + rad * math.sin(angle)])
-        cv.create_polygon(pts, fill=color, outline='', tags='snow', smooth=False)
-        # cross lines for the largest flakes
-        if r >= 5:
-            arm = r * 1.15
-            for i in range(3):
-                a = rot + math.pi / 3 * i
-                cv.create_line(x + arm * math.cos(a), y + arm * math.sin(a),
-                               x - arm * math.cos(a), y - arm * math.sin(a),
-                               fill=color, width=max(1, int(r * 0.18)),
-                               tags='snow', capstyle='round')
 
     def _tick(self):
         if not self._active or not self._canvas:
@@ -608,32 +692,22 @@ class SnowOverlay:
 
         for f in self._flakes:
             f['wobble'] += f['wspeed']
-            f['rot']    += f['rspeed']
             f['y']      += f['speed']
-            f['x']      += f['drift'] + math.sin(f['wobble']) * 0.55 * (0.4 + f['z'])
+            f['x']      += f['drift'] + math.sin(f['wobble']) * 0.6 * (0.3 + f['z'])
+            # slowly rotate through sprite variants for gentle spin feel
+            f['_rot_acc'] = f.get('_rot_acc', 0.0) + f['rspeed']
+            if abs(f['_rot_acc']) >= 1.0:
+                f['ri'] = (f['ri'] + int(f['_rot_acc'])) % self.N_ROTS
+                f['_rot_acc'] = 0.0
 
-            if f['y'] > self._sh + 12:
+            if f['y'] > self._sh + 20:
                 f.update(self._new_flake())
-            if   f['x'] < -12:         f['x'] = self._sw + 8
-            elif f['x'] > self._sw+12: f['x'] = -8
+            if   f['x'] < -20:          f['x'] = self._sw + 10
+            elif f['x'] > self._sw + 20: f['x'] = -10
 
-            x, y, r, color = f['x'], f['y'], f['r'], f['color']
-
-            if r < 2.0:
-                # tiny dot — distant flake
-                cv.create_oval(x-r, y-r, x+r, y+r,
-                               fill=color, outline='', tags='snow')
-            elif r < 3.5:
-                # medium oval
-                cv.create_oval(x-r, y-r, x+r, y+r,
-                               fill=color, outline='', tags='snow')
-                # tiny highlight to give sparkle
-                h = r * 0.35
-                cv.create_oval(x-h, y-h, x+h, y+h,
-                               fill='white', outline='', tags='snow')
-            else:
-                # full snowflake shape
-                self._draw_snowflake(cv, x, y, r, f['rot'], color)
+            photo = self._sprites.get((f['si'], f['ri']))
+            if photo:
+                cv.create_image(int(f['x']), int(f['y']), image=photo, tags='snow')
 
         self._win.after(self.TICK_MS, self._tick)
 
@@ -663,54 +737,74 @@ def _styled_btn(parent, text, command, danger=False, accent=False, **kw):
     return btn
 
 
-# Windows 11 Fluent dark palette
-BG0   = '#202020'   # app background
-BG1   = '#2d2d2d'   # card / panel
-BG2   = '#3a3a3a'   # hover
-BOR   = '#3d3d3d'   # border
-FG    = '#ffffff'
-SUB   = '#9d9d9d'
-ACC   = '#0078D4'   # Windows blue
-GRN   = '#107c10'   # Windows green
-RED_C = '#c42b1c'   # Windows red
-YEL   = '#c19c00'   # Windows yellow
+# Christmas Night palette
+BG0   = '#111820'   # midnight background
+BG1   = '#1a2535'   # card / panel
+BG2   = '#243048'   # hover
+BOR   = '#2d3d58'   # border
+FG    = '#f0f4ff'   # near-white
+SUB   = '#7a90b0'   # subtitle blue-grey
+ACC   = '#c0392b'   # Christmas red
+GRN   = '#27ae60'   # Christmas green
+RED_C = '#e74c3c'   # danger red
+YEL   = '#f0a030'   # Christmas gold
+_GOLD = '#f0c040'   # star gold
 
 
 class FloatMenu:
-    """Custom dark floating menu — replaces the OS context menu."""
+    """Christmas-themed floating menu."""
+
+    _SEC_LABELS = ['REMINDERS & TOOLS', 'CHRISTMAS MAGIC', 'CONTROLS', '']
 
     def __init__(self, parent):
         self._parent = parent
         self._win    = None
 
     def show(self, mx, my, sections):
-        """
-        sections: list of lists of items.
-        item tuple: (icon, title, subtitle_or_None, command_or_None, danger_bool=False)
-        """
         if self._win and self._win.winfo_exists():
             self._win.destroy()
 
         win = tk.Toplevel(self._parent)
         win.overrideredirect(True)
         win.attributes('-topmost', True)
-        win.configure(bg=BG1)
+        win.configure(bg=BOR)
         self._win = win
-
-        # Win11 acrylic on menu
         _apply_win11(win, 'acrylic')
 
-        # border via outer frame
+        # outer border frame
         outer = tk.Frame(win, bg=BOR, padx=1, pady=1)
         outer.pack(expand=True, fill='both')
-        body = tk.Frame(outer, bg=BG1, pady=4)
+
+        # ── Christmas header ──────────────────────────────────
+        hdr = tk.Frame(outer, bg='#8b1a1a', pady=10)
+        hdr.pack(fill='x')
+        tk.Label(hdr, text='🎅  SANTA PET',
+                 font=('Segoe UI Variable', 12, 'bold'),
+                 bg='#8b1a1a', fg='#ffffff').pack()
+        tk.Label(hdr, text='Christmas Desktop Buddy',
+                 font=('Segoe UI Variable', 8),
+                 bg='#8b1a1a', fg='#ffaaaa').pack(pady=(1, 0))
+
+        # thin gold separator under header
+        tk.Frame(outer, height=2, bg=_GOLD).pack(fill='x')
+
+        body = tk.Frame(outer, bg=BG1, pady=2)
         body.pack(expand=True, fill='both')
 
         for si, section in enumerate(sections):
-            if si > 0:
-                tk.Frame(body, height=1, bg=BOR).pack(fill='x', pady=2)
+            lbl_text = self._SEC_LABELS[si] if si < len(self._SEC_LABELS) else ''
+            if lbl_text:
+                lf = tk.Frame(body, bg=BG1)
+                lf.pack(fill='x', padx=8, pady=(6, 0))
+                tk.Label(lf, text=lbl_text,
+                         font=('Segoe UI Variable', 7, 'bold'),
+                         bg=BG1, fg=SUB).pack(side='left')
+                tk.Frame(lf, height=1, bg=BOR).pack(side='left', fill='x',
+                                                     expand=True, padx=(6, 0))
             for item in section:
                 self._row(body, item, win)
+            if si < len(sections) - 1:
+                tk.Frame(body, height=1, bg=BOR).pack(fill='x', padx=4, pady=2)
 
         # position — keep inside screen
         win.update_idletasks()
@@ -733,36 +827,34 @@ class FloatMenu:
     def _row(self, parent, item, win):
         icon, title, sub, cmd, *rest = tuple(item) + (None,) * (5 - len(item))
         danger = bool(rest[0]) if rest else False
-        fg_col = RED_C if danger else FG
+        fg_col = '#ff6b6b' if danger else FG
+        hov_bg = '#2a1515' if danger else BG2
 
         row = tk.Frame(parent, bg=BG1, cursor='hand2' if cmd else 'arrow')
-        row.pack(fill='x')
+        row.pack(fill='x', padx=2)
 
-        # icon cell
         ic = tk.Label(row, text=icon, font=('Segoe UI Emoji', 13),
                       bg=BG1, fg=fg_col, width=3, anchor='center')
-        ic.pack(side='left', padx=(6, 2), pady=6)
+        ic.pack(side='left', padx=(8, 2), pady=(5 if sub else 7, 5 if sub else 7))
 
-        # text cell
         tf = tk.Frame(row, bg=BG1)
-        tf.pack(side='left', fill='x', expand=True, padx=(0, 14))
+        tf.pack(side='left', fill='x', expand=True, padx=(0, 16))
 
         tl = tk.Label(tf, text=title, font=('Segoe UI Variable', 10),
                       bg=BG1, fg=fg_col, anchor='w')
-        tl.pack(fill='x', pady=(5 if sub else 6, 0))
+        tl.pack(fill='x', pady=(5 if sub else 0, 0))
 
         sl = None
         if sub:
             sl = tk.Label(tf, text=sub, font=('Segoe UI Variable', 8),
                           bg=BG1, fg=SUB, anchor='w')
-            sl.pack(fill='x', pady=(0, 5))
+            sl.pack(fill='x', pady=(1, 4))
 
-        # collect every widget in the row for hover binding
         all_w = [row, ic, tf, tl] + ([sl] if sl else [])
 
-        def _enter(e, ws=all_w):
+        def _enter(e, ws=all_w, hb=hov_bg):
             for w in ws:
-                try: w.configure(bg=BG2)
+                try: w.configure(bg=hb)
                 except: pass
         def _leave(e, ws=all_w):
             for w in ws:
@@ -798,8 +890,8 @@ class SantaPetApp:
         self.sh = self.root.winfo_screenheight()
 
         # position
-        self.sx = float(random.randint(150, self.sw - 200))
-        self.sy = float(self.sh - 200)
+        self.sx = float(random.randint(200, self.sw - 240))
+        self.sy = float(self.sh - H // 2 - 55)
         self.dir = random.choice(['l', 'r'])
         self.speed = 2
 
@@ -818,22 +910,21 @@ class SantaPetApp:
         self._tk_frames = {}
         self._pre_render()
 
-        # canvas
-        self.canvas = tk.Canvas(self.root, width=W, height=H+24,
+        # canvas — speech bubble strip is 28px above the sprite
+        self.canvas = tk.Canvas(self.root, width=W, height=H+28,
                                 bg='black', highlightthickness=0)
         self.canvas.pack()
-        self._img_id    = self.canvas.create_image(W//2, H//2+12,
-                                                   image=self._get_tk_frame())
+        self._img_id = self.canvas.create_image(W//2, H//2 + 14,
+                                                image=self._get_tk_frame())
         self._bub_bg  = None
         self._bub_txt = None
 
-        # bindings
-        self.canvas.bind('<Button-1>',        self._on_click)
+        # bindings — press starts drag tracking, release decides click vs drag
         self.canvas.bind('<Button-3>',        self._menu)
-        self.canvas.bind('<ButtonPress-1>',   self._drag_start)
+        self.canvas.bind('<ButtonPress-1>',   self._on_press)
         self.canvas.bind('<B1-Motion>',       self._drag_move)
-        self.canvas.bind('<ButtonRelease-1>', self._drag_end)
-        self._dragging = False
+        self.canvas.bind('<ButtonRelease-1>', self._on_release)
+        self._dragged = False
         self._dx = self._dy = 0
 
         # helpers
@@ -859,7 +950,6 @@ class SantaPetApp:
     def _pre_render(self):
         for key, frames in ANIM.items():
             self._tk_frames[key] = [ImageTk.PhotoImage(f) for f in frames]
-        self._tk_frames['spin'] = [ImageTk.PhotoImage(f) for f in SPIN_FRAMES]
 
     def _get_tk_frame(self):
         return self._tk_frames[self.anim][self.frame_idx % len(self._tk_frames[self.anim])]
@@ -870,12 +960,12 @@ class SantaPetApp:
 
     # ── main tick ────────────────────────────────────────────
     def _tick(self):
-        if not self.paused:
-            frames = self._tk_frames[self.anim]
-            self.frame_idx = (self.frame_idx + 1) % len(frames)
+        frames = self._tk_frames[self.anim]
+        self.frame_idx = (self.frame_idx + 1) % len(frames)
 
+        if not self.paused:
             # advance dance loop counter
-            if self.anim in DANCE_NAMES + ['spin']:
+            if self.anim in DANCE_NAMES:
                 if self.frame_idx == 0:
                     self.dance_loops += 1
                     if self.dance_loops >= self.dance_loops_goal:
@@ -885,10 +975,10 @@ class SantaPetApp:
             elif self.anim in ('walk_r', 'walk_l'):
                 if self.dir == 'r':
                     self.sx += self.speed
-                    if self.sx > self.sw - 80: self.dir = 'l'; self._set_anim('walk_l')
+                    if self.sx > self.sw - 120: self.dir = 'l'; self._set_anim('walk_l')
                 else:
                     self.sx -= self.speed
-                    if self.sx < 80: self.dir = 'r'; self._set_anim('walk_r')
+                    if self.sx < 120: self.dir = 'r'; self._set_anim('walk_r')
                 self._place()
                 # random gift drop while walking
                 self._gift_ticks += 1
@@ -897,23 +987,32 @@ class SantaPetApp:
                     self._gift_every = random.randint(180, 360)
                     self._gift.drop(self.sx, self.sy)
 
-            self.canvas.itemconfig(self._img_id, image=self._get_tk_frame())
-
+        self.canvas.itemconfig(self._img_id, image=self._get_tk_frame())
         self.root.after(self.ANIM_DELAY, self._tick)
 
     def _set_anim(self, name):
         self.anim      = name
         self.frame_idx = 0
 
-    # ── click → dance ────────────────────────────────────────
-    def _on_click(self, e):
-        if self._dragging: return
-        if self.anim in DANCE_NAMES + ['spin']: return   # already dancing
+    # ── press / drag / release ───────────────────────────────
+    def _on_press(self, e):
+        self._dragged = False
+        self._dx = e.x_root - int(self.sx)
+        self._dy = e.y_root - int(self.sy)
 
+    def _on_release(self, e):
+        if not self._dragged:
+            self._trigger_dance()
+        self._dragged = False
+
+    def _trigger_dance(self):
+        if self.anim in DANCE_NAMES:
+            return
+        if self.paused:
+            return
         dance = random.choice(DANCE_NAMES)
-        quip  = random.choice(DANCE_QUIPS[dance])
-        self._say(quip, 4000)
-        self._set_anim(dance if dance != 'spin' else 'spin')
+        self._say(random.choice(DANCE_QUIPS[dance]), 4000)
+        self._set_anim(dance)
         self.dance_loops      = 0
         self.dance_loops_goal = random.randint(2, 3)
 
@@ -938,10 +1037,12 @@ class SantaPetApp:
     def _say(self, text, ms=3000):
         self._clear_bubble()
         fw = self.canvas.winfo_width() or W
-        self._bub_bg  = self.canvas.create_rectangle(4, 2, fw-4, 22,
-                                                     fill='#ffffc8', outline='#666')
-        self._bub_txt = self.canvas.create_text(fw//2, 12, text=text,
-                                                font=('Arial', 7, 'bold'), fill='#222')
+        self._bub_bg  = self.canvas.create_rectangle(
+            4, 2, fw-4, 26,
+            fill='#1a2535', outline=_GOLD, width=1)
+        self._bub_txt = self.canvas.create_text(
+            fw//2, 14, text=text,
+            font=('Segoe UI Variable', 8, 'bold'), fill='#ffe0a0')
         self.root.after(ms, self._clear_bubble)
 
     def _clear_bubble(self):
@@ -951,19 +1052,11 @@ class SantaPetApp:
             setattr(self, attr, None)
 
     # ── drag ─────────────────────────────────────────────────
-    def _drag_start(self, e):
-        self._dragging = False
-        self._dx = e.x_root - int(self.sx)
-        self._dy = e.y_root - int(self.sy)
-
     def _drag_move(self, e):
-        self._dragging = True
-        self.sx = max(40, min(self.sw-40, float(e.x_root - self._dx)))
-        self.sy = max(40, min(self.sh-60, float(e.y_root - self._dy)))
+        self._dragged = True
+        self.sx = max(120, min(self.sw-120, float(e.x_root - self._dx)))
+        self.sy = max(80,  min(self.sh-80,  float(e.y_root - self._dy)))
         self._place()
-
-    def _drag_end(self, e):
-        self._dragging = False
 
     # ── context menu ─────────────────────────────────────────
     def _menu(self, e):
@@ -1049,7 +1142,12 @@ class SantaPetApp:
 
     def _toggle_pause(self):
         self.paused = not self.paused
-        self._say("Paused ⏸" if self.paused else "Let's go! 🎅", 2000)
+        if self.paused:
+            self._set_anim('idle')
+            self._say("Paused ⏸", 2000)
+        else:
+            self._set_anim('walk_r' if self.dir == 'r' else 'walk_l')
+            self._say("Let's go! 🎅", 2000)
 
     def _settings(self):
         win = tk.Toplevel(self.root)
