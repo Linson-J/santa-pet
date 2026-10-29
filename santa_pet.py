@@ -323,6 +323,306 @@ class WaterPopup:
         w.after(30000, lambda: w.destroy() if w.winfo_exists() else None)
 
 
+# ─────────────────────────── EXTRA COMPANIONS ────────────────
+
+class SleighFlyby:
+    """Santa's sleigh flies across the screen once and disappears."""
+    def __init__(self, parent):
+        self._parent = parent
+
+    def fly(self):
+        sw = self._parent.winfo_screenwidth()
+        sh = self._parent.winfo_screenheight()
+        # start off-left, fly to off-right at y ~ 1/5 screen height
+        y = sh // 5
+        win = tk.Toplevel(self._parent)
+        win.overrideredirect(True)
+        win.attributes('-topmost', True)
+        win.attributes('-transparentcolor', 'black')
+        win.configure(bg='black')
+        win.geometry(f"120x60+{-130}+{y}")
+
+        lbl = tk.Label(win, text='🛷🦌', font=('Segoe UI Emoji', 30),
+                       bg='black', fg='white')
+        lbl.pack()
+
+        win.update()
+        try:
+            import ctypes
+            hwnd = win.winfo_id()
+            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
+        except Exception:
+            pass
+
+        self._move(win, -130, y, sw + 140, step=14)
+
+    def _move(self, win, x, y, end_x, step):
+        if not win.winfo_exists():
+            return
+        if x > end_x:
+            win.destroy()
+            return
+        win.geometry(f"120x60+{x}+{y}")
+        win.after(25, lambda: self._move(win, x + step, y, end_x, step))
+
+
+class ReindeerDash:
+    """A reindeer runs in a straight horizontal line across the screen."""
+    def __init__(self, parent):
+        self._parent = parent
+
+    def dash(self):
+        sw = self._parent.winfo_screenwidth()
+        sh = self._parent.winfo_screenheight()
+        y  = sh - 130
+        win = tk.Toplevel(self._parent)
+        win.overrideredirect(True)
+        win.attributes('-topmost', True)
+        win.attributes('-transparentcolor', 'black')
+        win.configure(bg='black')
+        win.geometry(f"80x60+{-90}+{y}")
+
+        lbl = tk.Label(win, text='🦌', font=('Segoe UI Emoji', 38),
+                       bg='black', fg='white')
+        lbl.pack()
+
+        win.update()
+        try:
+            import ctypes
+            hwnd = win.winfo_id()
+            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
+        except Exception:
+            pass
+
+        self._move(win, -90, y, sw + 100, step=18)
+
+    def _move(self, win, x, y, end_x, step):
+        if not win.winfo_exists():
+            return
+        if x > end_x:
+            win.destroy()
+            return
+        win.geometry(f"80x60+{x}+{y}")
+        win.after(20, lambda: self._move(win, x + step, y, end_x, step))
+
+
+class ChristmasTree:
+    """A stationary Christmas tree that twinkles on screen."""
+    LIGHTS = ['🎄', '✨', '⭐', '🎄', '🌟', '🎄', '✨']
+
+    def __init__(self, parent):
+        self._parent = parent
+        self._win    = None
+        self._active = False
+        self._tick_i = 0
+
+    @property
+    def active(self):
+        return self._active
+
+    def toggle(self):
+        self.remove() if self._active else self.place()
+
+    def place(self):
+        if self._active:
+            return
+        self._active = True
+        sw = self._parent.winfo_screenwidth()
+        sh = self._parent.winfo_screenheight()
+        x  = sw - 120
+        y  = sh - 200
+
+        win = tk.Toplevel(self._parent)
+        win.overrideredirect(True)
+        win.attributes('-topmost', True)
+        win.attributes('-transparentcolor', 'black')
+        win.configure(bg='black')
+        win.geometry(f"100x160+{x}+{y}")
+        self._win = win
+
+        self._lbl = tk.Label(win, text='🎄', font=('Segoe UI Emoji', 72),
+                              bg='black', fg='white')
+        self._lbl.pack()
+
+        self._star = tk.Label(win, text='⭐', font=('Segoe UI Emoji', 18),
+                               bg='black', fg='white')
+        self._star.place(x=38, y=0)
+
+        win.update()
+        try:
+            import ctypes
+            hwnd = win.winfo_id()
+            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
+        except Exception:
+            pass
+
+        self._twinkle()
+
+    def remove(self):
+        self._active = False
+        if self._win and self._win.winfo_exists():
+            self._win.destroy()
+        self._win = None
+
+    def _twinkle(self):
+        if not self._active or not self._win or not self._win.winfo_exists():
+            return
+        stars = ['⭐', '🌟', '✨']
+        self._star.config(text=random.choice(stars))
+        self._win.after(random.randint(400, 1200), self._twinkle)
+
+
+# ─────────────────────────── GIFT DROP ──────────────────────
+
+class GiftDrop:
+    """Spawns a gift window at Santa's position that fades out."""
+    GIFTS  = ['🎁', '🎀', '⭐', '🍬', '🔔']
+    FADE_STEPS = 20
+    FADE_MS    = 60
+
+    def __init__(self, parent):
+        self._parent = parent
+
+    def drop(self, sx, sy):
+        """Drop a gift at screen coordinates (sx, sy)."""
+        gift = random.choice(self.GIFTS)
+        win = tk.Toplevel(self._parent)
+        win.overrideredirect(True)
+        win.attributes('-topmost', True)
+        win.attributes('-transparentcolor', 'black')
+        win.configure(bg='black')
+        cx = int(sx) - 18
+        cy = int(sy) - 18
+        win.geometry(f"36x36+{cx}+{cy}")
+
+        lbl = tk.Label(win, text=gift, font=('Segoe UI Emoji', 22),
+                       bg='black', fg='white')
+        lbl.pack()
+
+        # make click-through
+        win.update()
+        try:
+            import ctypes
+            hwnd = win.winfo_id()
+            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
+        except Exception:
+            pass
+
+        self._float_up(win, cy, self.FADE_STEPS)
+
+    def _float_up(self, win, y, steps):
+        if steps <= 0 or not win.winfo_exists():
+            if win.winfo_exists():
+                win.destroy()
+            return
+        alpha = steps / self.FADE_STEPS
+        try:
+            win.attributes('-alpha', alpha)
+            geo = win.geometry()
+            size_pos = geo.split('+')
+            x = int(size_pos[1])
+            win.geometry(f"{size_pos[0]}+{x}+{int(y) - 1}")
+        except Exception:
+            pass
+        win.after(self.FADE_MS, lambda: self._float_up(win, y - 1, steps - 1))
+
+
+# ─────────────────────────── SNOW OVERLAY ───────────────────
+
+class SnowOverlay:
+    """Fullscreen transparent click-through snow overlay."""
+    MAX_FLAKES = 120
+    TICK_MS    = 33   # ~30 fps
+
+    def __init__(self, parent):
+        self._parent = parent
+        self._win    = None
+        self._canvas = None
+        self._flakes = []
+        self._active = False
+        self._sw = self._sh = 0
+
+    @property
+    def active(self):
+        return self._active
+
+    def toggle(self):
+        self.stop() if self._active else self.start()
+
+    def start(self):
+        if self._active:
+            return
+        self._active = True
+        self._sw = self._parent.winfo_screenwidth()
+        self._sh = self._parent.winfo_screenheight()
+
+        self._win = tk.Toplevel(self._parent)
+        self._win.overrideredirect(True)
+        self._win.attributes('-topmost', True)
+        self._win.attributes('-transparentcolor', 'black')
+        self._win.geometry(f"{self._sw}x{self._sh}+0+0")
+        self._win.configure(bg='black')
+        self._win.protocol('WM_DELETE_WINDOW', lambda: None)
+
+        self._canvas = tk.Canvas(self._win, width=self._sw, height=self._sh,
+                                  bg='black', highlightthickness=0)
+        self._canvas.pack()
+
+        # make click-through: WS_EX_LAYERED | WS_EX_TRANSPARENT
+        self._win.update()
+        try:
+            import ctypes
+            hwnd = self._win.winfo_id()
+            ex = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+            ctypes.windll.user32.SetWindowLongW(hwnd, -20, ex | 0x80000 | 0x20)
+        except Exception:
+            pass
+
+        self._flakes = [self._new_flake(anywhere=True) for _ in range(self.MAX_FLAKES)]
+        self._tick()
+
+    def stop(self):
+        self._active = False
+        if self._win and self._win.winfo_exists():
+            self._win.destroy()
+        self._win = self._canvas = None
+        self._flakes = []
+
+    def _new_flake(self, anywhere=False):
+        return {
+            'x':     random.uniform(0, self._sw),
+            'y':     random.uniform(0, self._sh) if anywhere else random.uniform(-40, -2),
+            'r':     random.uniform(1.5, 4.5),
+            'speed': random.uniform(0.8, 2.6),
+            'drift': random.uniform(-0.5, 0.5),
+            'wobble': random.uniform(0, 6.28),
+        }
+
+    def _tick(self):
+        if not self._active or not self._canvas:
+            return
+        cv = self._canvas
+        cv.delete('snow')
+        for f in self._flakes:
+            f['wobble'] += 0.04
+            f['y'] += f['speed']
+            f['x'] += f['drift'] + 0.4 * __import__('math').sin(f['wobble'])
+            if f['y'] > self._sh + 10:
+                f.update(self._new_flake())
+            if f['x'] < -10:
+                f['x'] = self._sw + 5
+            elif f['x'] > self._sw + 10:
+                f['x'] = -5
+            x, y, r = f['x'], f['y'], f['r']
+            cv.create_oval(x - r, y - r, x + r, y + r,
+                           fill='white', outline='', tags='snow')
+        self._win.after(self.TICK_MS, self._tick)
+
+
 # ─────────────────────────── FLOAT MENU ─────────────────────
 
 BG0 = '#0d1117'   # darkest
@@ -498,6 +798,13 @@ class SantaPetApp:
         self._cleaner     = CacheCleaner()
         self._todo        = TodoWindow(self.root, on_remind_cb=self._task_remind)
         self._float_menu  = FloatMenu(self.root)
+        self._snow        = SnowOverlay(self.root)
+        self._gift        = GiftDrop(self.root)
+        self._gift_ticks  = 0
+        self._gift_every  = random.randint(180, 360)  # frames between drops
+        self._sleigh      = SleighFlyby(self.root)
+        self._reindeer    = ReindeerDash(self.root)
+        self._tree        = ChristmasTree(self.root)
 
         self._place()
         self._tick()
@@ -539,6 +846,12 @@ class SantaPetApp:
                     self.sx -= self.speed
                     if self.sx < 80: self.dir = 'r'; self._set_anim('walk_r')
                 self._place()
+                # random gift drop while walking
+                self._gift_ticks += 1
+                if self._gift_ticks >= self._gift_every:
+                    self._gift_ticks = 0
+                    self._gift_every = random.randint(180, 360)
+                    self._gift.drop(self.sx, self.sy)
 
             self.canvas.itemconfig(self._img_id, image=self._get_tk_frame())
 
@@ -637,6 +950,10 @@ class SantaPetApp:
 
         pause_icon  = "▶" if self.paused else "⏸"
         pause_title = "Resume Walking" if self.paused else "Pause Walking"
+        snow_icon  = "🌤" if self._snow.active else "❄️"
+        snow_title = "Stop Snow" if self._snow.active else "Let it Snow!"
+        tree_icon  = "🗑" if self._tree.active else "🎄"
+        tree_title = "Remove Tree" if self._tree.active else "Place Christmas Tree"
 
         sections = [
             [
@@ -650,6 +967,12 @@ class SantaPetApp:
                  self._todo.show),
                 ("🔗", "Google Tasks",    gt_sub,
                  gt_cmd),
+            ],
+            [
+                (snow_icon,  snow_title,       "Falling snowflakes overlay",  self._snow.toggle),
+                (tree_icon,  tree_title,        "Stationary tree in corner",   self._tree.toggle),
+                ("🛷",       "Sleigh Fly-by",  "Santa's sleigh crosses screen", self._sleigh.fly),
+                ("🦌",       "Reindeer Dash",  "Reindeer runs across screen",   self._reindeer.dash),
             ],
             [
                 (pause_icon, pause_title, None, self._toggle_pause),
